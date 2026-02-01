@@ -23,7 +23,7 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
     id: 'hive-learner',
     displayName: 'Hive Learner',
     accentColorKey: 'purple',
-    firebaseProjectId: process.env.HIVE_FIREBASE_PROJECT_ID || 'hive-firebase',
+    firebaseProjectId: process.env.HIVE_FIREBASE_PROJECT_ID || 'beeapp-5c98b',
     firebaseProjectType: 'hive',
     accentClasses: {
       text: 'text-violet-300',
@@ -38,7 +38,7 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
     id: 'prepcenter-oman',
     displayName: 'PrepCenter Oman',
     accentColorKey: 'orange',
-    firebaseProjectId: process.env.PREPCENTER_FIREBASE_PROJECT_ID || 'prepcenter-firebase',
+    firebaseProjectId: process.env.PREPCENTER_FIREBASE_PROJECT_ID || 'prepcenter-750c1',
     firebaseProjectType: 'prepcenter',
     accentClasses: {
       text: 'text-orange-300',
@@ -53,7 +53,7 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
     id: 'prepcenter-uae',
     displayName: 'PrepCenter UAE',
     accentColorKey: 'blue',
-    firebaseProjectId: process.env.PREPCENTER_FIREBASE_PROJECT_ID || 'prepcenter-firebase',
+    firebaseProjectId: process.env.PREPCENTER_FIREBASE_PROJECT_ID || 'prepcenter-750c1',
     firebaseProjectType: 'prepcenter',
     accentClasses: {
       text: 'text-blue-300',
