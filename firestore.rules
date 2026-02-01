@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Admin Firebase Project Rules
+    // This project is used for authentication and config only
+    
+    // Config is readable by authenticated users
+    match /config/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false; // Admin-only via console
+    }
+    
+    // No project data stored in admin Firebase
+    // All project data is stored in PrepCenter and Hive Firebase projects
+    // Access is handled server-side via service accounts
+  }
+}

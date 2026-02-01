@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Service account has full access (server-side only)
+    // This is handled by Firebase Admin SDK with service account credentials
+    
+    // Projects data - allow service account access
+    // Client-side access is restricted - all operations go through server actions
+    match /projects/{projectId}/{document=**} {
+      // Deny all client-side access - use server actions instead
+      allow read, write: if false;
+    }
+    
+    // Allow service account to read/write (handled server-side)
+    // Note: Service account access bypasses these rules when using Admin SDK
+  }
+}
