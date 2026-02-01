@@ -11,13 +11,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-md border border-border bg-background-card px-3 py-2 text-sm text-gray-100',
+          'flex h-8 w-full rounded-notion border border-border-subtle bg-background-card px-2.5 py-1.5 text-sm text-gray-100',
           'placeholder:text-gray-500',
-          'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background',
+          'focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-background transition-all duration-notion',
           accent
             ? 'focus:ring-violet-500/40 focus:border-violet-500/30'
-            : 'focus:ring-gray-500/40 focus:border-gray-500/30',
+            : 'focus:ring-gray-500/40 focus:border-border',
           'disabled:cursor-not-allowed disabled:opacity-50',
+          'hover:border-border',
           className
         )}
         ref={ref}

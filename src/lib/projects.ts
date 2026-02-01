@@ -15,6 +15,13 @@ export interface ProjectConfig {
     ring: string;
     hover: string;
     badge: string;
+    // Secondary accent classes for UI elements
+    secondary: {
+      text: string;
+      bg: string;
+      border: string;
+      hover: string;
+    };
   };
 }
 
@@ -32,6 +39,12 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
       ring: 'focus:ring-violet-500/40',
       hover: 'hover:bg-violet-500/10',
       badge: 'bg-violet-500/20 text-violet-300 border-violet-500/40',
+      secondary: {
+        text: 'text-accent-purple-light',
+        bg: 'bg-accent-purple-subtle',
+        border: 'border-accent-purple-border',
+        hover: 'hover:bg-accent-purple-subtle',
+      },
     },
   },
   'prepcenter-oman': {
@@ -47,6 +60,12 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
       ring: 'focus:ring-orange-500/40',
       hover: 'hover:bg-orange-500/10',
       badge: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+      secondary: {
+        text: 'text-accent-pink-light',
+        bg: 'bg-accent-pink-subtle',
+        border: 'border-accent-pink-border',
+        hover: 'hover:bg-accent-pink-subtle',
+      },
     },
   },
   'prepcenter-uae': {
@@ -62,6 +81,12 @@ export const PROJECTS: Record<ProjectId, ProjectConfig> = {
       ring: 'focus:ring-blue-500/40',
       hover: 'hover:bg-blue-500/10',
       badge: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+      secondary: {
+        text: 'text-accent-blue-light',
+        bg: 'bg-accent-blue-subtle',
+        border: 'border-accent-blue-border',
+        hover: 'hover:bg-accent-blue-subtle',
+      },
     },
   },
 };

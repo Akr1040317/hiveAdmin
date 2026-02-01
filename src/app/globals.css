@@ -3,7 +3,73 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-background text-gray-100;
+  * {
+    @apply border-border-subtle;
   }
+  
+  body {
+    @apply bg-background text-gray-100 antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+  
+  /* Notion-like typography */
+  h1 {
+    @apply text-2xl font-semibold text-gray-50;
+    letter-spacing: -0.02em;
+  }
+  
+  h2 {
+    @apply text-xl font-medium text-gray-100;
+    letter-spacing: -0.01em;
+  }
+  
+  h3 {
+    @apply text-lg font-medium text-gray-200;
+  }
+  
+  /* Subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-light rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border;
+  }
+}
+
+@layer utilities {
+  /* 8px grid system */
+  .space-grid {
+    gap: 8px;
+  }
+  
+  .space-grid-x {
+    column-gap: 8px;
+  }
+  
+  .space-grid-y {
+    row-gap: 8px;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
 }

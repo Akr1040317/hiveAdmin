@@ -1,27 +1,31 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { DataTable, Column } from '@/components/shared/DataTable';
+import { ViewProvider, useView } from '@/contexts/ViewContext';
+import { ViewToolbar } from '@/components/shared/ViewToolbar';
+import { ViewTabs } from '@/components/shared/ViewTabs';
+import { TableView, TableColumn } from '@/components/shared/TableView';
+import { CalendarView } from '@/components/shared/CalendarView';
+import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem } from '@/app/actions/calendar';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
-import { Select } from '@/components/ui/Select';
-import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
+import { Filter, Sort } from '@/lib/views';
+import { format } from 'date-fns';
 
-export default function CalendarPage() {
+function CalendarItemsContent() {
   const { project, projectId } = useProject();
+  const { currentView, updateCurrentView, switchViewType } = useView();
   const accentClasses = project?.accentClasses;
   
   const [calendarItems, setCalendarItems] = useState<CalendarItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [sorts, setSorts] = useState<Sort[]>([]);
 
   const { execute: loadCalendarItems, loading } = useServerAction(getCalendarItems);
   const { execute: handleCreateItem } = useServerAction(createCalendarItem);
@@ -36,70 +40,98 @@ export default function CalendarPage() {
     }
   }, [projectId]);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    type: 'event' as CalendarItem['type'],
-    date: '',
-    notes: '',
-    status: 'planned' as CalendarItem['status'],
-  });
-
-  useEffect(() => {
-    if (selectedItem) {
-      setFormData({
-        title: selectedItem.title,
-        type: selectedItem.type,
-        date: new Date(selectedItem.date).toISOString().split('T')[0],
-        notes: selectedItem.notes || '',
-        status: selectedItem.status,
-      });
-    } else {
-      setFormData({
-        title: '',
-        type: 'event',
-        date: '',
-        notes: '',
-        status: 'planned',
-      });
+  const filteredItems = useMemo(() => {
+    let result = calendarItems;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(item => 
+        item.title.toLowerCase().includes(searchLower) ||
+        item.notes.toLowerCase().includes(searchLower)
+      );
     }
-  }, [selectedItem, isFormOpen]);
+    filters.forEach(filter => {
+      if (filter.operator === 'equals') {
+        result = result.filter(item => (item as any)[filter.field] === filter.value);
+      } else if (filter.operator === 'not_equals') {
+        result = result.filter(item => (item as any)[filter.field] !== filter.value);
+      }
+    });
+    return result;
+  }, [calendarItems, search, filters]);
 
-  const handleCreate = async (data: Omit<CalendarItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreate = async (data: Partial<CalendarItem>) => {
     if (!projectId) return;
-    await handleCreateItem(projectId, {
-      ...data,
-      date: new Date(data.date),
-    });
+    const newItem: Omit<CalendarItem, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: data.title || 'Untitled Event',
+      type: data.type || 'event',
+      date: data.date || new Date(),
+      notes: data.notes || '',
+      status: data.status || 'planned',
+    };
+    await handleCreateItem(projectId, newItem);
     const updated = await loadCalendarItems(projectId);
     if (updated) setCalendarItems(updated);
+    setIsDrawerOpen(false);
   };
 
-  const handleUpdate = async (data: Partial<Omit<CalendarItem, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  const handleUpdate = async (updates: Partial<CalendarItem>) => {
     if (!projectId || !selectedItem) return;
-    await handleUpdateItem(projectId, selectedItem.id, {
-      ...data,
-      date: data.date ? new Date(data.date) : undefined,
-    });
+    await handleUpdateItem(projectId, selectedItem.id, updates);
     const updated = await loadCalendarItems(projectId);
     if (updated) setCalendarItems(updated);
-    setSelectedItem(null);
+    setSelectedItem({ ...selectedItem, ...updates });
   };
 
-  const filteredItems = calendarItems.filter((item) => {
-    if (typeFilter && item.type !== typeFilter) return false;
-    if (statusFilter && item.status !== statusFilter) return false;
-    return true;
-  });
+  const handleDelete = async () => {
+    if (!projectId || !selectedItem) return;
+    if (confirm('Are you sure?')) {
+      await handleDeleteItem(projectId, selectedItem.id);
+      const updated = await loadCalendarItems(projectId);
+      if (updated) setCalendarItems(updated);
+      setIsDrawerOpen(false);
+      setSelectedItem(null);
+    }
+  };
 
-  const columns: Column<CalendarItem>[] = [
+  const availableFields = [
+    { value: 'title', label: 'Title', type: 'text' as const },
+    { value: 'type', label: 'Type', type: 'select' as const },
+    { value: 'status', label: 'Status', type: 'select' as const },
+    { value: 'date', label: 'Date', type: 'date' as const },
+  ];
+
+  const typeOptions = [
+    { value: 'deadline', label: 'Deadline' },
+    { value: 'milestone', label: 'Milestone' },
+    { value: 'event', label: 'Event' },
+    { value: 'reminder', label: 'Reminder' },
+  ];
+
+  const statusOptions = [
+    { value: 'planned', label: 'Planned' },
+    { value: 'scheduled', label: 'Scheduled' },
+    { value: 'completed', label: 'Completed' },
+  ];
+
+  const getTypeColor = (type: string): string => {
+    const t = type.toLowerCase();
+    if (t === 'deadline') return '#ef4444'; // red-500
+    if (t === 'milestone') return '#8b5cf6'; // purple-500
+    if (t === 'event') return '#3b82f6'; // blue-500
+    if (t === 'reminder') return '#eab308'; // yellow-500
+    return '#6b7280'; // gray-500
+  };
+
+  const tableColumns: TableColumn<CalendarItem>[] = [
     {
       key: 'title',
       header: 'Title',
+      sortable: true,
       render: (item) => (
         <div>
-          <div className="font-medium">{item.title}</div>
+          <div className="font-semibold text-sm text-gray-50">{item.title}</div>
           {item.notes && (
-            <div className="text-sm text-gray-400 line-clamp-1">{item.notes}</div>
+            <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">{item.notes}</div>
           )}
         </div>
       ),
@@ -107,209 +139,207 @@ export default function CalendarPage() {
     {
       key: 'type',
       header: 'Type',
-      render: (item) => (
-        <Badge variant="default" className="capitalize">
-          {item.type}
-        </Badge>
-      ),
-    },
-    {
-      key: 'date',
-      header: 'Date',
-      render: (item) => (
-        <span className="text-sm text-gray-300">
-          {new Date(item.date).toLocaleDateString()}
-        </span>
-      ),
+      sortable: true,
+      type: 'badge',
+      render: (item) => {
+        const color = getTypeColor(item.type);
+        return (
+          <Badge className={cn(
+            'text-xs capitalize',
+            color === 'bg-red-500' && 'bg-red-500/20 text-red-400 border-red-500/40',
+            color === 'bg-purple-500' && 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+            color === 'bg-blue-500' && 'bg-blue-500/20 text-blue-400 border-blue-500/40',
+            color === 'bg-yellow-500' && 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
+          )}>
+            {item.type}
+          </Badge>
+        );
+      },
     },
     {
       key: 'status',
       header: 'Status',
-      render: (item) => (
-        <Select
-          value={item.status}
-          onChange={(e) => {
-            if (projectId) {
-              handleUpdateItem(projectId, item.id, { status: e.target.value as CalendarItem['status'] }).then(() => {
-                loadCalendarItems(projectId).then((data) => {
-                  if (data) setCalendarItems(data);
-                });
-              });
-            }
-          }}
-          accent
-          className="w-40"
-        >
-          <option value="planned">Planned</option>
-          <option value="scheduled">Scheduled</option>
-          <option value="completed">Completed</option>
-        </Select>
-      ),
+      sortable: true,
+      type: 'badge',
+      render: (item) => {
+        const statusColors: Record<string, string> = {
+          planned: 'bg-gray-500/20 text-gray-400 border-gray-500/40',
+          scheduled: 'bg-blue-500/20 text-blue-400 border-blue-500/40',
+          completed: 'bg-green-500/20 text-green-400 border-green-500/40',
+        };
+        return (
+          <Badge className={cn('text-xs capitalize', statusColors[item.status])}>
+            {item.status}
+          </Badge>
+        );
+      },
     },
     {
-      key: 'actions',
-      header: 'Actions',
+      key: 'date',
+      header: 'Date',
+      sortable: true,
+      type: 'date',
       render: (item) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedItem(item);
-              setIsFormOpen(true);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Delete this calendar item?')) {
-                handleDeleteItem(projectId!, item.id).then(() => {
-                  loadCalendarItems(projectId!).then((data) => {
-                    if (data) setCalendarItems(data);
-                  });
-                });
-              }
-            }}
-            className="text-red-400 hover:text-red-300"
-          >
-            Delete
-          </Button>
-        </div>
+        <span className="text-xs text-gray-400">
+          {format(new Date(item.date), 'MMM d, yyyy')}
+        </span>
       ),
     },
   ];
 
+  const viewType = currentView?.viewType || 'calendar';
+  const accent = project?.accentColorKey || false;
+
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className={cn('text-3xl font-bold mb-2', accentClasses?.text)}>
-            Calendar
-          </h1>
-          <div className={cn('h-1 w-24 rounded', accentClasses?.bg)} />
-          <p className="text-gray-400 mt-4">
-            Important dates, deadlines, milestones, and events
-          </p>
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-5 border-b border-border-subtle bg-gradient-to-r from-background to-background-card/50">
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn('w-1 h-8 rounded-full', accentClasses?.bg.replace('/10', ''))} />
+          <div>
+            <h1 className={cn('text-2xl font-bold mb-0.5', accentClasses?.text)}>Calendar</h1>
+            <p className="text-sm text-gray-400">Important dates, deadlines, and milestones</p>
+          </div>
         </div>
-        <Button variant="primary" accent onClick={() => {
-          setSelectedItem(null);
-          setIsFormOpen(true);
-        }}>
-          New Calendar Item
-        </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-6">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading calendar items...</div>
-          ) : (
-            <DataTable
-              data={filteredItems}
-              columns={columns}
-              searchKey="title"
-              searchPlaceholder="Search calendar items..."
-              filters={[
-                {
-                  key: 'type',
-                  label: 'Type',
-                  options: [
-                    { value: 'deadline', label: 'Deadline' },
-                    { value: 'milestone', label: 'Milestone' },
-                    { value: 'event', label: 'Event' },
-                    { value: 'reminder', label: 'Reminder' },
-                  ],
-                  value: typeFilter,
-                  onChange: setTypeFilter,
-                },
-                {
-                  key: 'status',
-                  label: 'Status',
-                  options: [
-                    { value: 'planned', label: 'Planned' },
-                    { value: 'scheduled', label: 'Scheduled' },
-                    { value: 'completed', label: 'Completed' },
-                  ],
-                  value: statusFilter,
-                  onChange: setStatusFilter,
-                },
-              ]}
-              emptyMessage="No calendar items found. Add your first item!"
-              accent
-            />
-          )}
-        </CardContent>
-      </Card>
+      <ViewTabs availableViewTypes={['calendar', 'table']} onViewTypeChange={switchViewType} accent={accent} />
 
-      <Modal
-        isOpen={isFormOpen}
+      <ViewToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        filters={filters}
+        onFiltersChange={setFilters}
+        sorts={sorts}
+        onSortsChange={(newSorts) => {
+          setSorts(newSorts);
+          updateCurrentView({ sorts: newSorts });
+        }}
+        availableFields={availableFields}
+        visibleColumns={currentView?.visibleColumns}
+        onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
+        onNew={() => {
+          setSelectedItem(null);
+          setIsDrawerOpen(true);
+        }}
+        viewType={viewType}
+        accent={accent}
+      />
+
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading calendar items...</div>
+        ) : viewType === 'calendar' ? (
+          <CalendarView
+            data={filteredItems}
+            getDate={(item) => new Date(item.date)}
+            getTitle={(item) => item.title}
+            getStatus={(item) => item.status}
+            getColor={(item) => getTypeColor(item.type)}
+            onItemClick={(item) => {
+              setSelectedItem(item);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No calendar items found. Create your first item!"
+            accent={accent}
+          />
+        ) : (
+          <TableView
+            data={filteredItems}
+            columns={tableColumns}
+            sorts={sorts}
+            onSortChange={(newSorts) => {
+              setSorts(newSorts);
+              updateCurrentView({ sorts: newSorts });
+            }}
+            visibleColumns={currentView?.visibleColumns}
+            onRowClick={(item) => {
+              setSelectedItem(item);
+              setIsDrawerOpen(true);
+            }}
+            onQuickAdd={() => {
+              setSelectedItem(null);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No calendar items found. Create your first item!"
+            accent={accent}
+          />
+        )}
+      </div>
+
+      <DetailDrawer
+        isOpen={isDrawerOpen}
         onClose={() => {
-          setIsFormOpen(false);
+          setIsDrawerOpen(false);
           setSelectedItem(null);
         }}
-        title={selectedItem ? 'Edit Calendar Item' : 'Create Calendar Item'}
-        accent
-        size="lg"
-      >
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (selectedItem) {
-              await handleUpdate(formData);
-            } else {
-              await handleCreate(formData as Omit<CalendarItem, 'id' | 'createdAt' | 'updatedAt'>);
-            }
-            setIsFormOpen(false);
-            setSelectedItem(null);
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
-            <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required accent />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
-              <Select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as CalendarItem['type'] })} accent>
-                <option value="deadline">Deadline</option>
-                <option value="milestone">Milestone</option>
-                <option value="event">Event</option>
-                <option value="reminder">Reminder</option>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
-              <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required accent />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-            <Select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value as CalendarItem['status'] })} accent>
-              <option value="planned">Planned</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="completed">Completed</option>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Notes</label>
-            <textarea
-              className="flex min-h-[100px] w-full rounded-md border border-border bg-background-card px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-violet-500/40 focus:border-violet-500/30"
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-4">
-            <Button type="button" variant="secondary" onClick={() => { setIsFormOpen(false); setSelectedItem(null); }}>Cancel</Button>
-            <Button type="submit" variant="primary" accent>{selectedItem ? 'Update' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
+        title={selectedItem?.title || 'New Calendar Item'}
+        onTitleChange={(title) => {
+          if (selectedItem) handleUpdate({ title });
+        }}
+        properties={[
+          {
+            key: 'type',
+            label: 'Type',
+            type: 'select',
+            value: selectedItem?.type || 'event',
+            options: typeOptions,
+            onChange: (value) => {
+              if (selectedItem) handleUpdate({ type: value as CalendarItem['type'] });
+            },
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            type: 'select',
+            value: selectedItem?.status || 'planned',
+            options: statusOptions,
+            onChange: (value) => {
+              if (selectedItem) handleUpdate({ status: value as CalendarItem['status'] });
+            },
+          },
+          {
+            key: 'date',
+            label: 'Date',
+            type: 'date',
+            value: selectedItem?.date ? format(new Date(selectedItem.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+            onChange: (value) => {
+              if (selectedItem) handleUpdate({ date: value ? new Date(value) : new Date() });
+            },
+          },
+        ]}
+        bodyFields={[
+          {
+            key: 'notes',
+            label: 'Notes',
+            value: selectedItem?.notes || '',
+            onChange: (value) => {
+              if (selectedItem) handleUpdate({ notes: value });
+            },
+            placeholder: 'Additional notes...',
+          },
+        ]}
+        metadata={selectedItem ? {
+          createdAt: selectedItem.createdAt,
+          updatedAt: selectedItem.updatedAt,
+        } : undefined}
+        onSave={() => {
+          if (selectedItem) {
+            setIsDrawerOpen(false);
+          } else {
+            handleCreate({ title: 'Untitled Event' });
+          }
+        }}
+        onDelete={selectedItem ? handleDelete : undefined}
+        accent={accent}
+      />
     </div>
+  );
+}
+
+export default function CalendarPage() {
+  return (
+    <ViewProvider moduleName="calendar" defaultViewType="calendar">
+      <CalendarItemsContent />
+    </ViewProvider>
   );
 }

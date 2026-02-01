@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { ProjectId, getProject } from '@/lib/projects';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 
 export default function ProjectLayout({
   children,
@@ -27,10 +28,10 @@ export default function ProjectLayout({
     return null; // Will redirect
   }
 
-  // AdminLayout is already provided by parent admin/layout.tsx
+  // Wrap AdminLayout with ProjectProvider so Sidebar and Header have access to project context
   return (
     <ProjectProvider projectId={projectId as ProjectId}>
-      {children}
+      <AdminLayout>{children}</AdminLayout>
     </ProjectProvider>
   );
 }

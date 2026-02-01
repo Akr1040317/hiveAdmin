@@ -1,29 +1,34 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { DataTable, Column } from '@/components/shared/DataTable';
+import { ViewProvider, useView } from '@/contexts/ViewContext';
+import { ViewToolbar } from '@/components/shared/ViewToolbar';
+import { ViewTabs } from '@/components/shared/ViewTabs';
+import { TableView, TableColumn } from '@/components/shared/TableView';
+import { BoardView } from '@/components/shared/BoardView';
+import { CalendarView } from '@/components/shared/CalendarView';
+import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { Content, getContent, createContent, updateContent, deleteContent } from '@/app/actions/content';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
-import { Select } from '@/components/ui/Select';
-import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
+import { Filter, Sort } from '@/lib/views';
+import { format, isAfter } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function ContentPage() {
+function ContentContent() {
   const { project, projectId } = useProject();
   const { user } = useAuth();
+  const { currentView, updateCurrentView, switchViewType } = useView();
   const accentClasses = project?.accentClasses;
   
   const [content, setContent] = useState<Content[]>([]);
   const [selectedContent, setSelectedContent] = useState<Content | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [channelFilter, setChannelFilter] = useState<string>('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [sorts, setSorts] = useState<Sort[]>([]);
 
   const { execute: loadContent, loading } = useServerAction(getContent);
   const { execute: handleCreateContent } = useServerAction(createContent);
@@ -38,326 +43,402 @@ export default function ContentPage() {
     }
   }, [projectId]);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    contentType: 'article' as Content['contentType'],
-    channel: 'web' as Content['channel'],
-    publishAt: '',
-    dueAt: '',
-    status: 'idea' as Content['status'],
-    owner: user?.email || '',
-  });
-
-  useEffect(() => {
-    if (selectedContent) {
-      setFormData({
-        title: selectedContent.title,
-        description: selectedContent.description,
-        contentType: selectedContent.contentType,
-        channel: selectedContent.channel,
-        publishAt: selectedContent.publishAt ? new Date(selectedContent.publishAt).toISOString().split('T')[0] : '',
-        dueAt: selectedContent.dueAt ? new Date(selectedContent.dueAt).toISOString().split('T')[0] : '',
-        status: selectedContent.status,
-        owner: selectedContent.owner,
-      });
-    } else {
-      setFormData({
-        title: '',
-        description: '',
-        contentType: 'article',
-        channel: 'web',
-        publishAt: '',
-        dueAt: '',
-        status: 'idea',
-        owner: user?.email || '',
-      });
+  const filteredContent = useMemo(() => {
+    let result = content;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(c => 
+        c.title.toLowerCase().includes(searchLower) ||
+        c.description.toLowerCase().includes(searchLower)
+      );
     }
-  }, [selectedContent, isFormOpen, user]);
+    filters.forEach(filter => {
+      if (filter.operator === 'equals') {
+        result = result.filter(c => (c as any)[filter.field] === filter.value);
+      } else if (filter.operator === 'not_equals') {
+        result = result.filter(c => (c as any)[filter.field] !== filter.value);
+      }
+    });
+    return result;
+  }, [content, search, filters]);
 
-  const handleCreate = async (data: Omit<Content, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreate = async (data: Partial<Content>) => {
     if (!projectId) return;
-    await handleCreateContent(projectId, {
-      ...data,
-      publishAt: data.publishAt ? new Date(data.publishAt) : undefined,
-      dueAt: data.dueAt ? new Date(data.dueAt) : undefined,
-    });
+    const newContent: Omit<Content, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: data.title || 'Untitled Content',
+      description: data.description || '',
+      contentType: data.contentType || 'article',
+      channel: data.channel || 'web',
+      publishAt: data.publishAt || new Date(),
+      dueAt: data.dueAt,
+      status: data.status || 'idea',
+      owner: data.owner || user?.email || '',
+    };
+    await handleCreateContent(projectId, newContent);
     const updated = await loadContent(projectId);
     if (updated) setContent(updated);
+    setIsDrawerOpen(false);
   };
 
-  const handleUpdate = async (data: Partial<Omit<Content, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  const handleUpdate = async (updates: Partial<Content>) => {
     if (!projectId || !selectedContent) return;
-    await handleUpdateContent(projectId, selectedContent.id, {
-      ...data,
-      publishAt: data.publishAt ? new Date(data.publishAt) : undefined,
-      dueAt: data.dueAt ? new Date(data.dueAt) : undefined,
-    });
+    await handleUpdateContent(projectId, selectedContent.id, updates);
     const updated = await loadContent(projectId);
     if (updated) setContent(updated);
-    setSelectedContent(null);
+    setSelectedContent({ ...selectedContent, ...updates });
   };
 
-  const filteredContent = content.filter((item) => {
-    if (statusFilter && item.status !== statusFilter) return false;
-    if (channelFilter && item.channel !== channelFilter) return false;
-    return true;
-  });
+  const handleDelete = async () => {
+    if (!projectId || !selectedContent) return;
+    if (confirm('Are you sure?')) {
+      await handleDeleteContent(projectId, selectedContent.id);
+      const updated = await loadContent(projectId);
+      if (updated) setContent(updated);
+      setIsDrawerOpen(false);
+      setSelectedContent(null);
+    }
+  };
 
-  const columns: Column<Content>[] = [
+  const handleCardMove = async (contentId: string, newStatus: Content['status']) => {
+    if (!projectId) return;
+    await handleUpdateContent(projectId, contentId, { status: newStatus });
+    const updated = await loadContent(projectId);
+    if (updated) setContent(updated);
+  };
+
+  const availableFields = [
+    { value: 'title', label: 'Title', type: 'text' as const },
+    { value: 'status', label: 'Status', type: 'select' as const },
+    { value: 'contentType', label: 'Content Type', type: 'select' as const },
+    { value: 'channel', label: 'Channel', type: 'select' as const },
+    { value: 'publishAt', label: 'Publish Date', type: 'date' as const },
+    { value: 'dueAt', label: 'Due Date', type: 'date' as const },
+  ];
+
+  const statusOptions = [
+    { value: 'idea', label: 'Idea' },
+    { value: 'in_creation', label: 'In Creation' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'scheduled', label: 'Scheduled' },
+    { value: 'sent', label: 'Sent' },
+    { value: 'verified', label: 'Verified' },
+  ];
+
+  const contentTypeOptions = [
+    { value: 'video', label: 'Video' },
+    { value: 'article', label: 'Article' },
+    { value: 'tips_tricks', label: 'Tips & Tricks' },
+    { value: 'notification', label: 'Notification' },
+    { value: 'email_campaign', label: 'Email Campaign' },
+  ];
+
+  const channelOptions = [
+    { value: 'instagram', label: 'Instagram' },
+    { value: 'whatsapp', label: 'WhatsApp' },
+    { value: 'email', label: 'Email' },
+    { value: 'app', label: 'App' },
+    { value: 'web', label: 'Web' },
+  ];
+
+  const isOverdue = (item: Content) => {
+    if (!item.dueAt) return false;
+    const due = new Date(item.dueAt);
+    const now = new Date();
+    return isAfter(now, due) && item.status !== 'sent' && item.status !== 'verified';
+  };
+
+  const getStatusColor = (item: Content): string => {
+    if (isOverdue(item)) return '#ef4444'; // red-500
+    const s = item.status.toLowerCase();
+    if (s === 'sent' || s === 'verified') return '#22c55e'; // green-500
+    if (s === 'scheduled' || s === 'ready') return '#3b82f6'; // blue-500
+    if (s === 'in_creation') return '#eab308'; // yellow-500
+    return '#6b7280'; // gray-500
+  };
+
+  const tableColumns: TableColumn<Content>[] = [
     {
       key: 'title',
       header: 'Title',
-      render: (item) => (
+      sortable: true,
+      render: (c) => (
         <div>
-          <div className="font-medium">{item.title}</div>
-          <div className="text-sm text-gray-400 line-clamp-1">{item.description}</div>
+          <div className="font-semibold text-sm text-gray-50">{c.title}</div>
+          <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">{c.description}</div>
         </div>
       ),
     },
     {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      type: 'select',
+      options: statusOptions,
+      onEdit: (c, value) => handleCardMove(c.id, value as Content['status']),
+    },
+    {
       key: 'contentType',
       header: 'Type',
-      render: (item) => (
-        <Badge variant="default" className="capitalize">
-          {item.contentType.replace('_', ' ')}
+      sortable: true,
+      type: 'badge',
+      render: (c) => (
+        <Badge variant="secondary" className="text-xs capitalize">
+          {c.contentType.replace('_', ' ')}
         </Badge>
       ),
     },
     {
       key: 'channel',
       header: 'Channel',
-      render: (item) => (
-        <Badge variant="default" className="capitalize">
-          {item.channel}
+      sortable: true,
+      type: 'badge',
+      render: (c) => (
+        <Badge variant="secondary" className="text-xs capitalize">
+          {c.channel}
         </Badge>
       ),
     },
     {
-      key: 'status',
-      header: 'Status',
-      render: (item) => (
-        <Select
-          value={item.status}
-          onChange={(e) => {
-            if (projectId) {
-              handleUpdateContent(projectId, item.id, { status: e.target.value as Content['status'] }).then(() => {
-                loadContent(projectId).then((data) => {
-                  if (data) setContent(data);
-                });
-              });
-            }
-          }}
-          accent
-          className="w-40"
-        >
-          <option value="idea">Idea</option>
-          <option value="in_creation">In Creation</option>
-          <option value="ready">Ready</option>
-          <option value="scheduled">Scheduled</option>
-          <option value="sent">Sent</option>
-          <option value="verified">Verified</option>
-        </Select>
+      key: 'publishAt',
+      header: 'Publish Date',
+      sortable: true,
+      type: 'date',
+      render: (c) => (
+        <span className="text-xs text-gray-400">
+          {c.publishAt ? format(new Date(c.publishAt), 'MMM d, yyyy') : '—'}
+        </span>
       ),
     },
     {
       key: 'dueAt',
       header: 'Due Date',
-      render: (item) => (
-        <span className="text-sm text-gray-400">
-          {item.dueAt ? new Date(item.dueAt).toLocaleDateString() : '-'}
+      sortable: true,
+      type: 'date',
+      render: (c) => (
+        <span className={cn(
+          'text-xs',
+          isOverdue(c) ? 'text-red-400 font-semibold' : 'text-gray-400'
+        )}>
+          {c.dueAt ? format(new Date(c.dueAt), 'MMM d, yyyy') : '—'}
+          {isOverdue(c) && ' ⚠️'}
         </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      render: (item) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedContent(item);
-              setIsFormOpen(true);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Delete this content?')) {
-                handleDeleteContent(projectId!, item.id).then(() => {
-                  loadContent(projectId!).then((data) => {
-                    if (data) setContent(data);
-                  });
-                });
-              }
-            }}
-            className="text-red-400 hover:text-red-300"
-          >
-            Delete
-          </Button>
-        </div>
       ),
     },
   ];
 
+  const boardColumns = [
+    { id: 'idea', title: 'Idea', status: 'idea' },
+    { id: 'in_creation', title: 'In Creation', status: 'in_creation' },
+    { id: 'ready', title: 'Ready', status: 'ready' },
+    { id: 'scheduled', title: 'Scheduled', status: 'scheduled' },
+    { id: 'sent', title: 'Sent', status: 'sent' },
+    { id: 'verified', title: 'Verified', status: 'verified' },
+  ];
+
+  const viewType = currentView?.viewType || 'table';
+  const accent = project?.accentColorKey || false;
+
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className={cn('text-3xl font-bold mb-2', accentClasses?.text)}>
-            Content Pipeline
-          </h1>
-          <div className={cn('h-1 w-24 rounded', accentClasses?.bg)} />
-          <p className="text-gray-400 mt-4">
-            Manage content creation, scheduling, and publishing
-          </p>
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-5 border-b border-border-subtle bg-gradient-to-r from-background to-background-card/50">
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn('w-1 h-8 rounded-full', accentClasses?.bg.replace('/10', ''))} />
+          <div>
+            <h1 className={cn('text-2xl font-bold mb-0.5', accentClasses?.text)}>Content Pipeline</h1>
+            <p className="text-sm text-gray-400">Manage content creation and publishing</p>
+          </div>
         </div>
-        <Button variant="primary" accent onClick={() => {
-          setSelectedContent(null);
-          setIsFormOpen(true);
-        }}>
-          New Content
-        </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-6">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading content...</div>
-          ) : (
-            <DataTable
-              data={filteredContent}
-              columns={columns}
-              searchKey="title"
-              searchPlaceholder="Search content..."
-              filters={[
-                {
-                  key: 'status',
-                  label: 'Status',
-                  options: [
-                    { value: 'idea', label: 'Idea' },
-                    { value: 'in_creation', label: 'In Creation' },
-                    { value: 'ready', label: 'Ready' },
-                    { value: 'scheduled', label: 'Scheduled' },
-                    { value: 'sent', label: 'Sent' },
-                    { value: 'verified', label: 'Verified' },
-                  ],
-                  value: statusFilter,
-                  onChange: setStatusFilter,
-                },
-                {
-                  key: 'channel',
-                  label: 'Channel',
-                  options: [
-                    { value: 'instagram', label: 'Instagram' },
-                    { value: 'whatsapp', label: 'WhatsApp' },
-                    { value: 'email', label: 'Email' },
-                    { value: 'app', label: 'App' },
-                    { value: 'web', label: 'Web' },
-                  ],
-                  value: channelFilter,
-                  onChange: setChannelFilter,
-                },
-              ]}
-              emptyMessage="No content found. Create your first content item!"
-              accent
-            />
-          )}
-        </CardContent>
-      </Card>
+      <ViewTabs availableViewTypes={['table', 'board', 'calendar']} onViewTypeChange={switchViewType} accent={accent} />
 
-      <Modal
-        isOpen={isFormOpen}
+      <ViewToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        filters={filters}
+        onFiltersChange={setFilters}
+        sorts={sorts}
+        onSortsChange={(newSorts) => {
+          setSorts(newSorts);
+          updateCurrentView({ sorts: newSorts });
+        }}
+        availableFields={availableFields}
+        visibleColumns={currentView?.visibleColumns}
+        onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
+        onNew={() => {
+          setSelectedContent(null);
+          setIsDrawerOpen(true);
+        }}
+        viewType={viewType}
+        accent={accent}
+      />
+
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading content...</div>
+        ) : viewType === 'table' ? (
+          <TableView
+            data={filteredContent}
+            columns={tableColumns}
+            sorts={sorts}
+            onSortChange={(newSorts) => {
+              setSorts(newSorts);
+              updateCurrentView({ sorts: newSorts });
+            }}
+            visibleColumns={currentView?.visibleColumns}
+            onRowClick={(c) => {
+              setSelectedContent(c);
+              setIsDrawerOpen(true);
+            }}
+            onQuickAdd={() => {
+              setSelectedContent(null);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No content found. Create your first content!"
+            accent={accent}
+          />
+        ) : viewType === 'board' ? (
+          <BoardView
+            data={filteredContent}
+            columns={boardColumns}
+            getCardData={(c) => ({
+              title: c.title,
+              subtitle: c.channel,
+              badges: [
+                { 
+                  label: c.contentType.replace('_', ' '), 
+                  variant: 'secondary' 
+                },
+                isOverdue(c) && { 
+                  label: 'Overdue', 
+                  variant: 'critical' 
+                },
+              ].filter(Boolean) as any,
+              updatedAt: c.updatedAt,
+              userId: c.owner?.split('@')[0] || 'user',
+            })}
+            onCardClick={(c) => {
+              setSelectedContent(c);
+              setIsDrawerOpen(true);
+            }}
+            onCardMove={handleCardMove}
+            onAddCard={(status) => {
+              setSelectedContent({ ...selectedContent, status: status as Content['status'] } as Content);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No content found. Create your first content!"
+            accent={accent}
+          />
+        ) : (
+          <CalendarView
+            data={filteredContent}
+            getDate={(c) => c.publishAt ? new Date(c.publishAt) : new Date()}
+            getTitle={(c) => c.title}
+            getStatus={(c) => c.status}
+            getColor={getStatusColor}
+            onItemClick={(c) => {
+              setSelectedContent(c);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No content found. Create your first content!"
+            accent={accent}
+          />
+        )}
+      </div>
+
+      <DetailDrawer
+        isOpen={isDrawerOpen}
         onClose={() => {
-          setIsFormOpen(false);
+          setIsDrawerOpen(false);
           setSelectedContent(null);
         }}
-        title={selectedContent ? 'Edit Content' : 'Create Content'}
-        accent
-        size="lg"
-      >
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (selectedContent) {
-              await handleUpdate(formData);
-            } else {
-              await handleCreate(formData);
-            }
-            setIsFormOpen(false);
-            setSelectedContent(null);
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
-            <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required accent />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
-            <textarea
-              className="flex min-h-[100px] w-full rounded-md border border-border bg-background-card px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-violet-500/40 focus:border-violet-500/30"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Content Type</label>
-              <Select value={formData.contentType} onChange={(e) => setFormData({ ...formData, contentType: e.target.value as Content['contentType'] })} accent>
-                <option value="video">Video</option>
-                <option value="article">Article</option>
-                <option value="tips_tricks">Tips & Tricks</option>
-                <option value="notification">Notification</option>
-                <option value="email_campaign">Email Campaign</option>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Channel</label>
-              <Select value={formData.channel} onChange={(e) => setFormData({ ...formData, channel: e.target.value as Content['channel'] })} accent>
-                <option value="instagram">Instagram</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="email">Email</option>
-                <option value="app">App</option>
-                <option value="web">Web</option>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Publish At</label>
-              <Input type="date" value={formData.publishAt} onChange={(e) => setFormData({ ...formData, publishAt: e.target.value })} accent />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Due At</label>
-              <Input type="date" value={formData.dueAt} onChange={(e) => setFormData({ ...formData, dueAt: e.target.value })} accent />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-            <Select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value as Content['status'] })} accent>
-              <option value="idea">Idea</option>
-              <option value="in_creation">In Creation</option>
-              <option value="ready">Ready</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="sent">Sent</option>
-              <option value="verified">Verified</option>
-            </Select>
-          </div>
-          <div className="flex gap-2 justify-end pt-4">
-            <Button type="button" variant="secondary" onClick={() => { setIsFormOpen(false); setSelectedContent(null); }}>Cancel</Button>
-            <Button type="submit" variant="primary" accent>{selectedContent ? 'Update' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
+        title={selectedContent?.title || 'New Content'}
+        onTitleChange={(title) => {
+          if (selectedContent) handleUpdate({ title });
+        }}
+        properties={[
+          {
+            key: 'status',
+            label: 'Status',
+            type: 'select',
+            value: selectedContent?.status || 'idea',
+            options: statusOptions,
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ status: value as Content['status'] });
+            },
+          },
+          {
+            key: 'contentType',
+            label: 'Content Type',
+            type: 'select',
+            value: selectedContent?.contentType || 'article',
+            options: contentTypeOptions,
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ contentType: value as Content['contentType'] });
+            },
+          },
+          {
+            key: 'channel',
+            label: 'Channel',
+            type: 'select',
+            value: selectedContent?.channel || 'web',
+            options: channelOptions,
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ channel: value as Content['channel'] });
+            },
+          },
+          {
+            key: 'publishAt',
+            label: 'Publish Date',
+            type: 'date',
+            value: selectedContent?.publishAt ? format(new Date(selectedContent.publishAt), 'yyyy-MM-dd') : '',
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ publishAt: value ? new Date(value) : undefined });
+            },
+          },
+          {
+            key: 'dueAt',
+            label: 'Due Date',
+            type: 'date',
+            value: selectedContent?.dueAt ? format(new Date(selectedContent.dueAt), 'yyyy-MM-dd') : '',
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ dueAt: value ? new Date(value) : undefined });
+            },
+          },
+        ]}
+        bodyFields={[
+          {
+            key: 'description',
+            label: 'Description',
+            value: selectedContent?.description || '',
+            onChange: (value) => {
+              if (selectedContent) handleUpdate({ description: value });
+            },
+            placeholder: 'Content description...',
+          },
+        ]}
+        metadata={selectedContent ? {
+          createdAt: selectedContent.createdAt,
+          updatedAt: selectedContent.updatedAt,
+        } : undefined}
+        onSave={() => {
+          if (selectedContent) {
+            setIsDrawerOpen(false);
+          } else {
+            handleCreate({ title: 'Untitled Content' });
+          }
+        }}
+        onDelete={selectedContent ? handleDelete : undefined}
+        accent={accent}
+      />
     </div>
+  );
+}
+
+export default function ContentPage() {
+  return (
+    <ViewProvider moduleName="content" defaultViewType="table">
+      <ContentContent />
+    </ViewProvider>
   );
 }

@@ -11,8 +11,9 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'rounded-lg bg-background-card border',
-          accent ? 'border-violet-500/30' : 'border-border',
+          'rounded-notion bg-background-card border border-border-subtle',
+          accent ? 'border-accent-purple-border' : '',
+          'transition-colors duration-notion',
           className
         )}
         {...props}
@@ -27,7 +28,7 @@ export const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('flex flex-col space-y-1.5 p-6', className)}
+      className={cn('flex flex-col space-y-1.5 p-4', className)}
       {...props}
     />
   )
@@ -38,7 +39,7 @@ export const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttrib
   ({ className, ...props }, ref) => (
     <h3
       ref={ref}
-      className={cn('text-lg font-semibold leading-none tracking-tight text-gray-100', className)}
+      className={cn('text-base font-medium leading-none tracking-tight text-gray-50', className)}
       {...props}
     />
   )
@@ -58,7 +59,7 @@ CardDescription.displayName = 'CardDescription';
 
 export const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
+    <div ref={ref} className={cn('p-4 pt-0', className)} {...props} />
   )
 );
 CardContent.displayName = 'CardContent';

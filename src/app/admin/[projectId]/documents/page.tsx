@@ -1,26 +1,31 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { DataTable, Column } from '@/components/shared/DataTable';
+import { ViewProvider, useView } from '@/contexts/ViewContext';
+import { ViewToolbar } from '@/components/shared/ViewToolbar';
+import { ViewTabs } from '@/components/shared/ViewTabs';
+import { TableView, TableColumn } from '@/components/shared/TableView';
+import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { Document, getDocuments, createDocumentItem, updateDocumentItem, deleteDocumentItem } from '@/app/actions/documents';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
-import { Select } from '@/components/ui/Select';
-import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
+import { Filter, Sort } from '@/lib/views';
+import { format } from 'date-fns';
+import { ExternalLink, FileText } from 'lucide-react';
 
-export default function DocumentsPage() {
+function DocumentsContent() {
   const { project, projectId } = useProject();
+  const { currentView, updateCurrentView, switchViewType } = useView();
   const accentClasses = project?.accentClasses;
   
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [sorts, setSorts] = useState<Sort[]>([]);
 
   const { execute: loadDocuments, loading } = useServerAction(getDocuments);
   const { execute: handleCreateDocument } = useServerAction(createDocumentItem);
@@ -35,233 +40,285 @@ export default function DocumentsPage() {
     }
   }, [projectId]);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    type: 'other' as Document['type'],
-    url: '',
-    notes: '',
-  });
-
-  useEffect(() => {
-    if (selectedDocument) {
-      setFormData({
-        title: selectedDocument.title,
-        type: selectedDocument.type,
-        url: selectedDocument.url || '',
-        notes: selectedDocument.notes || '',
-      });
-    } else {
-      setFormData({
-        title: '',
-        type: 'other',
-        url: '',
-        notes: '',
-      });
+  const filteredDocuments = useMemo(() => {
+    let result = documents;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(d => 
+        d.title.toLowerCase().includes(searchLower) ||
+        d.notes.toLowerCase().includes(searchLower) ||
+        d.url.toLowerCase().includes(searchLower)
+      );
     }
-  }, [selectedDocument, isFormOpen]);
+    filters.forEach(filter => {
+      if (filter.operator === 'equals') {
+        result = result.filter(d => (d as any)[filter.field] === filter.value);
+      } else if (filter.operator === 'not_equals') {
+        result = result.filter(d => (d as any)[filter.field] !== filter.value);
+      }
+    });
+    return result;
+  }, [documents, search, filters]);
 
-  const handleCreate = async (data: Omit<Document, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreate = async (data: Partial<Document>) => {
     if (!projectId) return;
-    await handleCreateDocument(projectId, data);
+    const newDoc: Omit<Document, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: data.title || 'Untitled Document',
+      type: data.type || 'other',
+      url: data.url || '',
+      notes: data.notes || '',
+    };
+    await handleCreateDocument(projectId, newDoc);
     const updated = await loadDocuments(projectId);
     if (updated) setDocuments(updated);
+    setIsDrawerOpen(false);
   };
 
-  const handleUpdate = async (data: Partial<Omit<Document, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  const handleUpdate = async (updates: Partial<Document>) => {
     if (!projectId || !selectedDocument) return;
-    await handleUpdateDocument(projectId, selectedDocument.id, data);
+    await handleUpdateDocument(projectId, selectedDocument.id, updates);
     const updated = await loadDocuments(projectId);
     if (updated) setDocuments(updated);
-    setSelectedDocument(null);
+    setSelectedDocument({ ...selectedDocument, ...updates });
   };
 
-  const filteredDocuments = documents.filter((doc) => {
-    if (typeFilter && doc.type !== typeFilter) return false;
-    return true;
-  });
+  const handleDelete = async () => {
+    if (!projectId || !selectedDocument) return;
+    if (confirm('Are you sure?')) {
+      await handleDeleteDocument(projectId, selectedDocument.id);
+      const updated = await loadDocuments(projectId);
+      if (updated) setDocuments(updated);
+      setIsDrawerOpen(false);
+      setSelectedDocument(null);
+    }
+  };
 
-  const columns: Column<Document>[] = [
+  const availableFields = [
+    { value: 'title', label: 'Title', type: 'text' as const },
+    { value: 'type', label: 'Type', type: 'select' as const },
+    { value: 'updatedAt', label: 'Updated', type: 'date' as const },
+  ];
+
+  const typeOptions = [
+    { value: 'contract', label: 'Contract' },
+    { value: 'schedule', label: 'Schedule' },
+    { value: 'marketing', label: 'Marketing' },
+    { value: 'ops', label: 'Ops' },
+    { value: 'legal', label: 'Legal' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const getTypeColor = (type: string) => {
+    const t = type.toLowerCase();
+    if (t === 'contract') return 'bg-blue-500';
+    if (t === 'schedule') return 'bg-purple-500';
+    if (t === 'marketing') return 'bg-pink-500';
+    if (t === 'ops') return 'bg-orange-500';
+    if (t === 'legal') return 'bg-red-500';
+    return 'bg-gray-500';
+  };
+
+  const tableColumns: TableColumn<Document>[] = [
     {
       key: 'title',
       header: 'Title',
-      render: (doc) => (
-        <div>
-          <div className="font-medium">{doc.title}</div>
-          {doc.notes && (
-            <div className="text-sm text-gray-400 line-clamp-1">{doc.notes}</div>
-          )}
+      sortable: true,
+      render: (d) => (
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-gray-400" />
+          <div>
+            <div className="font-semibold text-sm text-gray-50">{d.title}</div>
+            {d.notes && (
+              <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">{d.notes}</div>
+            )}
+          </div>
         </div>
       ),
     },
     {
       key: 'type',
       header: 'Type',
-      render: (doc) => (
-        <Badge variant="default" className="capitalize">
-          {doc.type}
-        </Badge>
-      ),
+      sortable: true,
+      type: 'badge',
+      render: (d) => {
+        const color = getTypeColor(d.type);
+        return (
+          <Badge className={cn(
+            'text-xs capitalize',
+            color === 'bg-blue-500' && 'bg-blue-500/20 text-blue-400 border-blue-500/40',
+            color === 'bg-purple-500' && 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+            color === 'bg-pink-500' && 'bg-pink-500/20 text-pink-400 border-pink-500/40',
+            color === 'bg-orange-500' && 'bg-orange-500/20 text-orange-400 border-orange-500/40',
+            color === 'bg-red-500' && 'bg-red-500/20 text-red-400 border-red-500/40'
+          )}>
+            {d.type}
+          </Badge>
+        );
+      },
     },
     {
       key: 'url',
       header: 'Link',
-      render: (doc) => (
-        doc.url ? (
-          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 text-sm">
-            Open →
+      sortable: false,
+      render: (d) => (
+        d.url ? (
+          <a
+            href={d.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink className="w-3 h-3" />
+            Open
           </a>
         ) : (
-          <span className="text-gray-500 text-sm">-</span>
+          <span className="text-xs text-gray-500">—</span>
         )
       ),
     },
     {
-      key: 'actions',
-      header: 'Actions',
-      render: (doc) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedDocument(doc);
-              setIsFormOpen(true);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Delete this document?')) {
-                handleDeleteDocument(projectId!, doc.id).then(() => {
-                  loadDocuments(projectId!).then((data) => {
-                    if (data) setDocuments(data);
-                  });
-                });
-              }
-            }}
-            className="text-red-400 hover:text-red-300"
-          >
-            Delete
-          </Button>
-        </div>
+      key: 'updatedAt',
+      header: 'Updated',
+      sortable: true,
+      type: 'date',
+      render: (d) => (
+        <span className="text-xs text-gray-400">
+          {format(new Date(d.updatedAt), 'MMM d, yyyy')}
+        </span>
       ),
     },
   ];
 
+  const viewType = currentView?.viewType || 'table';
+  const accent = project?.accentColorKey || false;
+
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className={cn('text-3xl font-bold mb-2', accentClasses?.text)}>
-            Document Center
-          </h1>
-          <div className={cn('h-1 w-24 rounded', accentClasses?.bg)} />
-          <p className="text-gray-400 mt-4">
-            Store and organize project documents
-          </p>
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-5 border-b border-border-subtle bg-gradient-to-r from-background to-background-card/50">
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn('w-1 h-8 rounded-full', accentClasses?.bg.replace('/10', ''))} />
+          <div>
+            <h1 className={cn('text-2xl font-bold mb-0.5', accentClasses?.text)}>Documents</h1>
+            <p className="text-sm text-gray-400">Store and organize important documents</p>
+          </div>
         </div>
-        <Button variant="primary" accent onClick={() => {
-          setSelectedDocument(null);
-          setIsFormOpen(true);
-        }}>
-          New Document
-        </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-6">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading documents...</div>
-          ) : (
-            <DataTable
-              data={filteredDocuments}
-              columns={columns}
-              searchKey="title"
-              searchPlaceholder="Search documents..."
-              filters={[
-                {
-                  key: 'type',
-                  label: 'Type',
-                  options: [
-                    { value: 'contract', label: 'Contract' },
-                    { value: 'schedule', label: 'Schedule' },
-                    { value: 'marketing', label: 'Marketing' },
-                    { value: 'ops', label: 'Ops' },
-                    { value: 'legal', label: 'Legal' },
-                    { value: 'other', label: 'Other' },
-                  ],
-                  value: typeFilter,
-                  onChange: setTypeFilter,
-                },
-              ]}
-              emptyMessage="No documents found. Add your first document!"
-              accent
-            />
-          )}
-        </CardContent>
-      </Card>
+      <ViewTabs availableViewTypes={['table']} onViewTypeChange={switchViewType} accent={accent} />
 
-      <Modal
-        isOpen={isFormOpen}
+      <ViewToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        filters={filters}
+        onFiltersChange={setFilters}
+        sorts={sorts}
+        onSortsChange={(newSorts) => {
+          setSorts(newSorts);
+          updateCurrentView({ sorts: newSorts });
+        }}
+        availableFields={availableFields}
+        visibleColumns={currentView?.visibleColumns}
+        onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
+        onNew={() => {
+          setSelectedDocument(null);
+          setIsDrawerOpen(true);
+        }}
+        viewType={viewType}
+        accent={accent}
+      />
+
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading documents...</div>
+        ) : (
+          <TableView
+            data={filteredDocuments}
+            columns={tableColumns}
+            sorts={sorts}
+            onSortChange={(newSorts) => {
+              setSorts(newSorts);
+              updateCurrentView({ sorts: newSorts });
+            }}
+            visibleColumns={currentView?.visibleColumns}
+            onRowClick={(d) => {
+              setSelectedDocument(d);
+              setIsDrawerOpen(true);
+            }}
+            onQuickAdd={() => {
+              setSelectedDocument(null);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No documents found. Create your first document!"
+            accent={accent}
+          />
+        )}
+      </div>
+
+      <DetailDrawer
+        isOpen={isDrawerOpen}
         onClose={() => {
-          setIsFormOpen(false);
+          setIsDrawerOpen(false);
           setSelectedDocument(null);
         }}
-        title={selectedDocument ? 'Edit Document' : 'Create Document'}
-        accent
-        size="lg"
-      >
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (selectedDocument) {
-              await handleUpdate(formData);
-            } else {
-              await handleCreate(formData);
-            }
-            setIsFormOpen(false);
-            setSelectedDocument(null);
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
-            <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required accent />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
-            <Select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as Document['type'] })} accent>
-              <option value="contract">Contract</option>
-              <option value="schedule">Schedule</option>
-              <option value="marketing">Marketing</option>
-              <option value="ops">Ops</option>
-              <option value="legal">Legal</option>
-              <option value="other">Other</option>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">URL</label>
-            <Input type="url" value={formData.url} onChange={(e) => setFormData({ ...formData, url: e.target.value })} placeholder="https://..." accent />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Notes</label>
-            <textarea
-              className="flex min-h-[100px] w-full rounded-md border border-border bg-background-card px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-violet-500/40 focus:border-violet-500/30"
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-4">
-            <Button type="button" variant="secondary" onClick={() => { setIsFormOpen(false); setSelectedDocument(null); }}>Cancel</Button>
-            <Button type="submit" variant="primary" accent>{selectedDocument ? 'Update' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
+        title={selectedDocument?.title || 'New Document'}
+        onTitleChange={(title) => {
+          if (selectedDocument) handleUpdate({ title });
+        }}
+        properties={[
+          {
+            key: 'type',
+            label: 'Type',
+            type: 'select',
+            value: selectedDocument?.type || 'other',
+            options: typeOptions,
+            onChange: (value) => {
+              if (selectedDocument) handleUpdate({ type: value as Document['type'] });
+            },
+          },
+          {
+            key: 'url',
+            label: 'URL',
+            type: 'text',
+            value: selectedDocument?.url || '',
+            onChange: (value) => {
+              if (selectedDocument) handleUpdate({ url: value });
+            },
+          },
+        ]}
+        bodyFields={[
+          {
+            key: 'notes',
+            label: 'Notes',
+            value: selectedDocument?.notes || '',
+            onChange: (value) => {
+              if (selectedDocument) handleUpdate({ notes: value });
+            },
+            placeholder: 'Document notes...',
+          },
+        ]}
+        metadata={selectedDocument ? {
+          createdAt: selectedDocument.createdAt,
+          updatedAt: selectedDocument.updatedAt,
+        } : undefined}
+        onSave={() => {
+          if (selectedDocument) {
+            setIsDrawerOpen(false);
+          } else {
+            handleCreate({ title: 'Untitled Document' });
+          }
+        }}
+        onDelete={selectedDocument ? handleDelete : undefined}
+        accent={accent}
+      />
     </div>
+  );
+}
+
+export default function DocumentsPage() {
+  return (
+    <ViewProvider moduleName="documents" defaultViewType="table">
+      <DocumentsContent />
+    </ViewProvider>
   );
 }

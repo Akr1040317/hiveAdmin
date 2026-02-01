@@ -22,6 +22,7 @@ export interface Bug {
   updatedAt: Date;
   createdBy: string;
   tags?: string[];
+  order?: number; // For board view ordering
 }
 
 export async function getBugs(projectId: ProjectId, token?: string | null): Promise<Bug[]> {

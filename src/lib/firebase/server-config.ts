@@ -85,7 +85,8 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
   let app: App;
   
   if (projectType === 'admin') {
-    // Admin project uses regular config or service account
+    // Admin project - use service account if available
+    // For token verification, Firebase Admin SDK requires credentials
     if (serviceAccount) {
       app = initializeApp({
         credential: cert({
@@ -93,15 +94,28 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
           privateKey: serviceAccount.privateKey,
           clientEmail: serviceAccount.clientEmail,
         }),
-        projectId: projectId || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        projectId: serviceAccount.projectId,
       }, `admin-${projectType}`);
     } else {
-      // Fallback to default app if no service account (for client-side auth)
-      const existingApps = getApps();
-      if (existingApps.length > 0) {
-        app = existingApps[0];
-      } else {
-        throw new Error('Admin Firebase configuration not found');
+      // Try to use Application Default Credentials (for environments like GCP, Vercel, etc.)
+      const adminProjectId = projectId || process.env.ADMIN_FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+      if (!adminProjectId) {
+        throw new Error('Admin Firebase project ID not found. Set ADMIN_FIREBASE_PROJECT_ID or NEXT_PUBLIC_FIREBASE_PROJECT_ID');
+      }
+      
+      try {
+        // Try to initialize without explicit credentials (uses ADC if available)
+        app = initializeApp({
+          projectId: adminProjectId,
+        }, `admin-${projectType}`);
+      } catch (error: any) {
+        // If that fails, we need service account credentials
+        console.error('Failed to initialize admin Firebase Admin SDK:', error.message);
+        throw new Error(
+          'Admin Firebase service account required for server-side token verification. ' +
+          'Please generate a service account key for the admin Firebase project and set ' +
+          'FIREBASE_SERVICE_ACCOUNT_PATH_ADMIN or FIREBASE_SERVICE_ACCOUNT_ADMIN environment variable.'
+        );
       }
     }
   } else {

@@ -1,27 +1,31 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { DataTable, Column } from '@/components/shared/DataTable';
+import { ViewProvider, useView } from '@/contexts/ViewContext';
+import { ViewToolbar } from '@/components/shared/ViewToolbar';
+import { ViewTabs } from '@/components/shared/ViewTabs';
+import { TableView, TableColumn } from '@/components/shared/TableView';
+import { BoardView } from '@/components/shared/BoardView';
+import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { Feature, getFeatures, createFeature, updateFeature, deleteFeature } from '@/app/actions/features';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
-import { Select } from '@/components/ui/Select';
-import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
+import { Filter, Sort } from '@/lib/views';
+import { format } from 'date-fns';
 
-export default function FeaturesPage() {
+function FeaturesContent() {
   const { project, projectId } = useProject();
+  const { currentView, updateCurrentView, switchViewType } = useView();
   const accentClasses = project?.accentClasses;
   
   const [features, setFeatures] = useState<Feature[]>([]);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [areaFilter, setAreaFilter] = useState<string>('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [sorts, setSorts] = useState<Sort[]>([]);
 
   const { execute: loadFeatures, loading } = useServerAction(getFeatures);
   const { execute: handleCreateFeature } = useServerAction(createFeature);
@@ -36,327 +40,322 @@ export default function FeaturesPage() {
     }
   }, [projectId]);
 
-  const handleCreate = async (data: Omit<Feature, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>) => {
+  const filteredFeatures = useMemo(() => {
+    let result = features;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(f => f.title.toLowerCase().includes(searchLower) || f.description.toLowerCase().includes(searchLower));
+    }
+    filters.forEach(filter => {
+      if (filter.operator === 'equals') {
+        result = result.filter(f => (f as any)[filter.field] === filter.value);
+      } else if (filter.operator === 'not_equals') {
+        result = result.filter(f => (f as any)[filter.field] !== filter.value);
+      }
+    });
+    return result;
+  }, [features, search, filters]);
+
+  const handleCreate = async (data: Partial<Feature>) => {
     if (!projectId) return;
-    await handleCreateFeature(projectId, data);
+    const newFeature: Omit<Feature, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> = {
+      title: data.title || 'Untitled Feature',
+      description: data.description || '',
+      area: data.area || 'learner',
+      priority: data.priority || 'medium',
+      status: data.status || 'idea',
+      order: features.length,
+    };
+    await handleCreateFeature(projectId, newFeature);
     const updated = await loadFeatures(projectId);
     if (updated) setFeatures(updated);
+    setIsDrawerOpen(false);
   };
 
-  const handleUpdate = async (data: Omit<Feature, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>) => {
+  const handleUpdate = async (updates: Partial<Feature>) => {
     if (!projectId || !selectedFeature) return;
-    await handleUpdateFeature(projectId, selectedFeature.id, data);
+    await handleUpdateFeature(projectId, selectedFeature.id, updates);
     const updated = await loadFeatures(projectId);
     if (updated) setFeatures(updated);
-    setSelectedFeature(null);
+    setSelectedFeature({ ...selectedFeature, ...updates });
   };
 
-  const handleDelete = async (featureId: string) => {
-    if (!projectId) return;
-    if (confirm('Are you sure you want to delete this feature?')) {
-      await handleDeleteFeature(projectId, featureId);
+  const handleDelete = async () => {
+    if (!projectId || !selectedFeature) return;
+    if (confirm('Are you sure?')) {
+      await handleDeleteFeature(projectId, selectedFeature.id);
       const updated = await loadFeatures(projectId);
       if (updated) setFeatures(updated);
+      setIsDrawerOpen(false);
+      setSelectedFeature(null);
     }
   };
 
-  const filteredFeatures = features.filter((feature) => {
-    if (statusFilter && feature.status !== statusFilter) return false;
-    if (areaFilter && feature.area !== areaFilter) return false;
-    return true;
-  });
+  const handleCardMove = async (featureId: string, newStatus: Feature['status']) => {
+    if (!projectId) return;
+    await handleUpdateFeature(projectId, featureId, { status: newStatus });
+    const updated = await loadFeatures(projectId);
+    if (updated) setFeatures(updated);
+  };
 
-  const columns: Column<Feature>[] = [
+  const availableFields = [
+    { value: 'title', label: 'Title', type: 'text' as const },
+    { value: 'status', label: 'Status', type: 'select' as const },
+    { value: 'priority', label: 'Priority', type: 'select' as const },
+    { value: 'area', label: 'Feature Area', type: 'select' as const },
+    { value: 'updatedAt', label: 'Updated', type: 'date' as const },
+  ];
+
+  const statusOptions = [
+    { value: 'idea', label: 'Idea' },
+    { value: 'planned', label: 'Planned' },
+    { value: 'in_development', label: 'In Development' },
+    { value: 'released', label: 'Released' },
+  ];
+
+  const priorityOptions = [
+    { value: 'high', label: 'High' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'low', label: 'Low' },
+  ];
+
+  const areaOptions = [
+    { value: 'learner', label: 'Learner' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'content', label: 'Content' },
+    { value: 'ops', label: 'Ops' },
+  ];
+
+  const tableColumns: TableColumn<Feature>[] = [
     {
       key: 'title',
       header: 'Title',
-      render: (feature) => (
+      sortable: true,
+      render: (f) => (
         <div>
-          <div className="font-medium">{feature.title}</div>
-          <div className="text-sm text-gray-400 line-clamp-1">{feature.description}</div>
+          <div className="font-medium text-sm text-gray-50">{f.title}</div>
+          <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">{f.description}</div>
         </div>
       ),
-    },
-    {
-      key: 'area',
-      header: 'Area',
-      render: (feature) => (
-        <Badge variant="default" className="capitalize">
-          {feature.area}
-        </Badge>
-      ),
-    },
-    {
-      key: 'priority',
-      header: 'Priority',
-      render: (feature) => {
-        const priorityColors: Record<string, string> = {
-          high: 'text-red-400',
-          medium: 'text-yellow-400',
-          low: 'text-gray-400',
-        };
-        return (
-          <span className={cn('font-medium capitalize', priorityColors[feature.priority])}>
-            {feature.priority}
-          </span>
-        );
-      },
     },
     {
       key: 'status',
       header: 'Status',
-      render: (feature) => (
-        <Select
-          value={feature.status}
-          onChange={(e) => {
-            if (projectId) {
-              handleUpdateFeature(projectId, feature.id, { status: e.target.value as Feature['status'] }).then(() => {
-                loadFeatures(projectId).then((data) => {
-                  if (data) setFeatures(data);
-                });
-              });
-            }
-          }}
-          accent
-          className="w-40"
-        >
-          <option value="idea">Idea</option>
-          <option value="planned">Planned</option>
-          <option value="in_development">In Development</option>
-          <option value="released">Released</option>
-        </Select>
-      ),
+      sortable: true,
+      type: 'select',
+      options: statusOptions,
+      onEdit: (f, value) => handleCardMove(f.id, value as Feature['status']),
     },
     {
-      key: 'actions',
-      header: 'Actions',
-      render: (feature) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedFeature(feature);
-              setIsFormOpen(true);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete(feature.id);
-            }}
-            className="text-red-400 hover:text-red-300"
-          >
-            Delete
-          </Button>
-        </div>
-      ),
+      key: 'priority',
+      header: 'Priority',
+      sortable: true,
+      type: 'badge',
+      render: (f) => {
+        const colors: Record<string, string> = {
+          high: 'bg-red-500/20 text-red-400 border-red-500/40',
+          medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
+          low: 'bg-gray-500/20 text-gray-400 border-gray-500/40',
+        };
+        return <Badge className={cn('text-xs capitalize', colors[f.priority])}>{f.priority}</Badge>;
+      },
+    },
+    {
+      key: 'area',
+      header: 'Feature Area',
+      sortable: true,
+      type: 'badge',
+      render: (f) => <Badge variant="secondary" className="text-xs capitalize">{f.area}</Badge>,
+    },
+    {
+      key: 'updatedAt',
+      header: 'Updated',
+      sortable: true,
+      type: 'date',
+      render: (f) => <span className="text-xs text-gray-400">{format(new Date(f.updatedAt), 'MMM d, yyyy')}</span>,
     },
   ];
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    area: 'learner' as Feature['area'],
-    priority: 'medium' as Feature['priority'],
-    status: 'idea' as Feature['status'],
-  });
+  const boardColumns = [
+    { id: 'idea', title: 'Idea', status: 'idea' },
+    { id: 'planned', title: 'Planned', status: 'planned' },
+    { id: 'in_development', title: 'In Development', status: 'in_development' },
+    { id: 'released', title: 'Released', status: 'released' },
+  ];
 
-  useEffect(() => {
-    if (selectedFeature) {
-      setFormData({
-        title: selectedFeature.title,
-        description: selectedFeature.description,
-        area: selectedFeature.area,
-        priority: selectedFeature.priority,
-        status: selectedFeature.status,
-      });
-    } else {
-      setFormData({
-        title: '',
-        description: '',
-        area: 'learner',
-        priority: 'medium',
-        status: 'idea',
-      });
-    }
-  }, [selectedFeature, isFormOpen]);
+  const viewType = currentView?.viewType || 'table';
+  const accent = project?.accentColorKey || false;
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className={cn('text-3xl font-bold mb-2', accentClasses?.text)}>
-            Features
-          </h1>
-          <div className={cn('h-1 w-24 rounded', accentClasses?.bg)} />
-          <p className="text-gray-400 mt-4">
-            Feature planning and development tracking
-          </p>
+    <div className="flex flex-col h-full">
+      <div className="px-6 py-5 border-b border-border-subtle bg-gradient-to-r from-background to-background-card/50">
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn('w-1 h-8 rounded-full', accentClasses?.bg.replace('/10', ''))} />
+          <div>
+            <h1 className={cn('text-2xl font-bold mb-0.5', accentClasses?.text)}>Features</h1>
+            <p className="text-sm text-gray-400">Manage feature requests and development</p>
+          </div>
         </div>
-        <Button
-          variant="primary"
-          accent
-          onClick={() => {
-            setSelectedFeature(null);
-            setIsFormOpen(true);
-          }}
-        >
-          New Feature
-        </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-6">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading features...</div>
-          ) : (
-            <DataTable
-              data={filteredFeatures}
-              columns={columns}
-              searchKey="title"
-              searchPlaceholder="Search features..."
-              filters={[
-                {
-                  key: 'status',
-                  label: 'Status',
-                  options: [
-                    { value: 'idea', label: 'Idea' },
-                    { value: 'planned', label: 'Planned' },
-                    { value: 'in_development', label: 'In Development' },
-                    { value: 'released', label: 'Released' },
-                  ],
-                  value: statusFilter,
-                  onChange: setStatusFilter,
-                },
-                {
-                  key: 'area',
-                  label: 'Area',
-                  options: [
-                    { value: 'learner', label: 'Learner' },
-                    { value: 'admin', label: 'Admin' },
-                    { value: 'content', label: 'Content' },
-                    { value: 'ops', label: 'Ops' },
-                  ],
-                  value: areaFilter,
-                  onChange: setAreaFilter,
-                },
-              ]}
-              emptyMessage="No features found. Create your first feature!"
-              accent
-            />
-          )}
-        </CardContent>
-      </Card>
+      <ViewTabs availableViewTypes={['table', 'board']} onViewTypeChange={switchViewType} accent={accent} />
 
-      <Modal
-        isOpen={isFormOpen}
+      <ViewToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        filters={filters}
+        onFiltersChange={setFilters}
+        sorts={sorts}
+        onSortsChange={(newSorts) => {
+          setSorts(newSorts);
+          updateCurrentView({ sorts: newSorts });
+        }}
+        availableFields={availableFields}
+        visibleColumns={currentView?.visibleColumns}
+        onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
+        onNew={() => {
+          setSelectedFeature(null);
+          setIsDrawerOpen(true);
+        }}
+        viewType={viewType}
+        accent={accent}
+      />
+
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading features...</div>
+        ) : viewType === 'table' ? (
+          <TableView
+            data={filteredFeatures}
+            columns={tableColumns}
+            sorts={sorts}
+            onSortChange={(newSorts) => {
+              setSorts(newSorts);
+              updateCurrentView({ sorts: newSorts });
+            }}
+            visibleColumns={currentView?.visibleColumns}
+            onRowClick={(f) => {
+              setSelectedFeature(f);
+              setIsDrawerOpen(true);
+            }}
+            onQuickAdd={() => {
+              setSelectedFeature(null);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No features found. Create your first feature!"
+            accent={accent}
+          />
+        ) : (
+          <BoardView
+            data={filteredFeatures}
+            columns={boardColumns}
+            getCardData={(f) => ({
+              title: f.title,
+              subtitle: f.description ? f.description.substring(0, 60) + (f.description.length > 60 ? '...' : '') : f.area,
+              badges: [
+                { 
+                  label: f.priority.charAt(0).toUpperCase() + f.priority.slice(1), 
+                  variant: f.priority as 'high' | 'medium' | 'low'
+                },
+                { 
+                  label: f.area.charAt(0).toUpperCase() + f.area.slice(1), 
+                  variant: 'secondary' 
+                },
+              ],
+              updatedAt: f.updatedAt,
+              userId: f.createdBy?.split('@')[0] || 'user',
+            })}
+            onCardClick={(f) => {
+              setSelectedFeature(f);
+              setIsDrawerOpen(true);
+            }}
+            onCardMove={handleCardMove}
+            onAddCard={(status) => {
+              setSelectedFeature({ ...selectedFeature, status: status as Feature['status'] } as Feature);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No features found. Create your first feature!"
+            accent={accent}
+          />
+        )}
+      </div>
+
+      <DetailDrawer
+        isOpen={isDrawerOpen}
         onClose={() => {
-          setIsFormOpen(false);
+          setIsDrawerOpen(false);
           setSelectedFeature(null);
         }}
-        title={selectedFeature ? 'Edit Feature' : 'Create Feature'}
-        accent
-        size="lg"
-      >
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (selectedFeature) {
-              await handleUpdate(formData);
-            } else {
-              await handleCreate(formData);
-            }
-            setIsFormOpen(false);
-            setSelectedFeature(null);
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
-            <Input
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              required
-              accent
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
-            <textarea
-              className="flex min-h-[100px] w-full rounded-md border border-border bg-background-card px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-violet-500/40 focus:border-violet-500/30"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Area</label>
-              <Select
-                value={formData.area}
-                onChange={(e) => setFormData({ ...formData, area: e.target.value as Feature['area'] })}
-                accent
-              >
-                <option value="learner">Learner</option>
-                <option value="admin">Admin</option>
-                <option value="content">Content</option>
-                <option value="ops">Ops</option>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Priority</label>
-              <Select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as Feature['priority'] })}
-                accent
-              >
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </Select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-            <Select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as Feature['status'] })}
-              accent
-            >
-              <option value="idea">Idea</option>
-              <option value="planned">Planned</option>
-              <option value="in_development">In Development</option>
-              <option value="released">Released</option>
-            </Select>
-          </div>
-
-          <div className="flex gap-2 justify-end pt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setIsFormOpen(false);
-                setSelectedFeature(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" accent>
-              {selectedFeature ? 'Update' : 'Create'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        title={selectedFeature?.title || 'New Feature'}
+        onTitleChange={(title) => {
+          if (selectedFeature) handleUpdate({ title });
+        }}
+        properties={[
+          {
+            key: 'status',
+            label: 'Status',
+            type: 'select',
+            value: selectedFeature?.status || 'idea',
+            options: statusOptions,
+            onChange: (value) => {
+              if (selectedFeature) handleUpdate({ status: value as Feature['status'] });
+            },
+          },
+          {
+            key: 'priority',
+            label: 'Priority',
+            type: 'select',
+            value: selectedFeature?.priority || 'medium',
+            options: priorityOptions,
+            onChange: (value) => {
+              if (selectedFeature) handleUpdate({ priority: value as Feature['priority'] });
+            },
+          },
+          {
+            key: 'area',
+            label: 'Feature Area',
+            type: 'select',
+            value: selectedFeature?.area || 'learner',
+            options: areaOptions,
+            onChange: (value) => {
+              if (selectedFeature) handleUpdate({ area: value as Feature['area'] });
+            },
+          },
+        ]}
+        bodyFields={[
+          {
+            key: 'description',
+            label: 'Description',
+            value: selectedFeature?.description || '',
+            onChange: (value) => {
+              if (selectedFeature) handleUpdate({ description: value });
+            },
+            placeholder: 'Describe the feature...',
+          },
+        ]}
+        metadata={selectedFeature ? {
+          createdAt: selectedFeature.createdAt,
+          updatedAt: selectedFeature.updatedAt,
+          createdBy: selectedFeature.createdBy,
+        } : undefined}
+        onSave={() => {
+          if (selectedFeature) {
+            setIsDrawerOpen(false);
+          } else {
+            handleCreate({ title: 'Untitled Feature' });
+          }
+        }}
+        onDelete={selectedFeature ? handleDelete : undefined}
+        accent={accent}
+      />
     </div>
+  );
+}
+
+export default function FeaturesPage() {
+  return (
+    <ViewProvider moduleName="features" defaultViewType="table">
+      <FeaturesContent />
+    </ViewProvider>
   );
 }

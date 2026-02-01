@@ -20,16 +20,25 @@ export async function getServerAuth(token?: string) {
     }
     
     if (!authToken) {
+      console.warn('No auth token provided to getServerAuth');
       return null;
     }
     
     // Verify the token using admin Firebase
-    const adminAuth = getAdminAuth('admin');
-    const decodedToken = await adminAuth.verifyIdToken(authToken);
-    
-    return decodedToken;
-  } catch (error) {
-    console.error('Error verifying auth token:', error);
+    try {
+      const adminAuth = getAdminAuth('admin');
+      const decodedToken = await adminAuth.verifyIdToken(authToken);
+      return decodedToken;
+    } catch (verifyError: any) {
+      console.error('Token verification failed:', verifyError.message);
+      // If it's a credential error, provide helpful message
+      if (verifyError.message?.includes('credential') || verifyError.message?.includes('initialize')) {
+        console.error('Firebase Admin SDK initialization issue. Make sure ADMIN_FIREBASE_PROJECT_ID is set.');
+      }
+      return null;
+    }
+  } catch (error: any) {
+    console.error('Error in getServerAuth:', error.message || error);
     return null;
   }
 }
@@ -39,11 +48,27 @@ export async function getServerAuth(token?: string) {
  * Accepts optional token parameter (for Server Actions)
  */
 export async function requireAuth(token?: string) {
-  const user = await getServerAuth(token);
-  
-  if (!user) {
-    throw new Error('Unauthorized: Authentication required');
+  if (!token) {
+    throw new Error('Unauthorized: Authentication token required. Please sign in again.');
   }
   
-  return user;
+  try {
+    const user = await getServerAuth(token);
+    
+    if (!user) {
+      throw new Error('Unauthorized: Invalid or expired authentication token. Please sign in again.');
+    }
+    
+    return user;
+  } catch (error: any) {
+    // Provide helpful error message if it's a Firebase Admin SDK initialization issue
+    if (error.message?.includes('credential') || error.message?.includes('initialize') || error.message?.includes('service account')) {
+      throw new Error(
+        'Server authentication setup incomplete. ' +
+        'Please set up the admin Firebase service account. ' +
+        'See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.'
+      );
+    }
+    throw error;
+  }
 }

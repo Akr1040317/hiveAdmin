@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 
@@ -12,6 +12,10 @@ export default function AdminLayoutWrapper({
 }) {
   const { user, loading, isAllowed } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  
+  // Check if we're on a project route (has projectId)
+  const isProjectRoute = pathname?.includes('/admin/') && pathname.split('/').length > 3;
 
   useEffect(() => {
     if (!loading) {
@@ -41,6 +45,12 @@ export default function AdminLayoutWrapper({
         </div>
       </div>
     );
+  }
+
+  // For project routes, don't wrap with AdminLayout here (it will be wrapped in [projectId]/layout.tsx)
+  // For /admin page, wrap with AdminLayout
+  if (isProjectRoute) {
+    return <>{children}</>;
   }
 
   return <AdminLayout>{children}</AdminLayout>;

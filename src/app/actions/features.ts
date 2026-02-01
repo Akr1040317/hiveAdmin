@@ -21,6 +21,7 @@ export interface Feature {
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
+  order?: number; // For board view ordering
 }
 
 export async function getFeatures(projectId: ProjectId, token?: string | null): Promise<Feature[]> {
