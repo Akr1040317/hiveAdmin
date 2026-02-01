@@ -14,6 +14,7 @@ import {
   getCollection,
 } from '@/lib/firebase/data-access';
 import { ProjectId, getProject } from '@/lib/projects';
+import { format } from 'date-fns';
 import { serializeForClient } from '@/lib/utils/serialize';
 
 export interface Bug {
@@ -26,6 +27,7 @@ export interface Bug {
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
+  assignedTo?: string; // Email address of assigned user
   tags?: string[];
   order?: number; // For board view ordering
   convertedFromReportId?: string; // Track if bug was converted from a report
@@ -78,6 +80,106 @@ export async function updateBug(
   token?: string | null
 ): Promise<void> {
   await requireAuth(token);
+  
+  // Only send emails for prepcenter-uae
+  const project = getProject(projectId);
+  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  
+  if (shouldSendEmails) {
+    // Get previous data to detect changes
+    const previousData = await getDocumentData<Bug>(projectId, 'bugs', bugId);
+    
+    // Detect key changes
+    const changes: string[] = [];
+    const newAssignedTo = data.assignedTo !== undefined ? data.assignedTo : previousData?.assignedTo;
+    const oldAssignedTo = previousData?.assignedTo;
+    
+    if (data.assignedTo !== undefined && data.assignedTo !== oldAssignedTo) {
+      changes.push('assignment');
+    }
+    if (data.status !== undefined && data.status !== previousData?.status) {
+      changes.push('status');
+    }
+    if (data.severity !== undefined && data.severity !== previousData?.severity) {
+      changes.push('severity');
+    }
+    if (data.dueDate !== undefined) {
+      const newDueDate = data.dueDate ? new Date(data.dueDate).toISOString().split('T')[0] : null;
+      const oldDueDate = previousData?.dueDate ? new Date(previousData.dueDate).toISOString().split('T')[0] : null;
+      if (newDueDate !== oldDueDate) {
+        changes.push('dueDate');
+      }
+    }
+    
+    // Send email if there are changes and there's an assignee
+    if (changes.length > 0 && newAssignedTo) {
+      try {
+        const statusLabels: Record<string, string> = {
+          reported: 'Reported',
+          in_progress: 'In Progress',
+          blocked: 'Blocked',
+          fixed: 'Fixed',
+          verified: 'Verified',
+        };
+        
+        const severityLabels: Record<string, string> = {
+          critical: 'Critical',
+          high: 'High',
+          medium: 'Medium',
+          low: 'Low',
+        };
+        
+        // Build email body
+        let emailBody = `Hello,\n\n`;
+        
+        if (changes.includes('assignment')) {
+          if (oldAssignedTo) {
+            emailBody += `You have been reassigned to this bug.\n\n`;
+          } else {
+            emailBody += `You have been assigned to this bug.\n\n`;
+          }
+        }
+        
+        emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
+        emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+        
+        if (changes.includes('status')) {
+          emailBody += `Status changed to: ${statusLabels[data.status as string] || data.status}\n`;
+        } else {
+          emailBody += `Status: ${statusLabels[previousData?.status || 'reported']}\n`;
+        }
+        
+        if (changes.includes('severity')) {
+          emailBody += `Severity changed to: ${severityLabels[data.severity as string] || data.severity}\n`;
+        } else {
+          emailBody += `Severity: ${severityLabels[previousData?.severity || 'medium']}\n`;
+        }
+        
+        if (changes.includes('dueDate')) {
+          if (data.dueDate) {
+            emailBody += `Due date changed to: ${format(new Date(data.dueDate), 'MMM d, yyyy')}\n`;
+          } else {
+            emailBody += `Due date removed\n`;
+          }
+        } else if (previousData?.dueDate) {
+          emailBody += `Due date: ${format(new Date(previousData.dueDate), 'MMM d, yyyy')}\n`;
+        }
+        
+        emailBody += `\n---\n`;
+        emailBody += `View this bug in the admin panel for more details.\n`;
+        
+        const subject = changes.includes('assignment') && !oldAssignedTo
+          ? `You've been assigned to: ${previousData?.title || 'Bug'}`
+          : `Update: ${previousData?.title || 'Bug'}`;
+        
+        await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, newAssignedTo);
+      } catch (error) {
+        // Log error but don't fail the update
+        console.error('Failed to send bug update email:', error);
+      }
+    }
+  }
+  
   return updateDocument<Bug>(projectId, 'bugs', bugId, data);
 }
 
@@ -485,15 +587,17 @@ export async function generateBugEmail(
 }
 
 /**
- * Send an email update to the bug reporter
+ * Send an email update to the bug reporter or assigned user
  * Calls Firebase Cloud Function to send email and updates bug with email metadata
+ * @param assignedToEmail If provided, sends to assigned user instead of reporter
  */
 export async function sendBugUpdateEmail(
   projectId: ProjectId,
   bugId: string,
   subject: string,
   body: string,
-  token?: string | null
+  token?: string | null,
+  assignedToEmail?: string | null
 ): Promise<void> {
   await requireAuth(token);
   
@@ -503,24 +607,29 @@ export async function sendBugUpdateEmail(
     throw new Error(`Bug ${bugId} not found`);
   }
   
-  // Get reporter email from bug or from original report
-  let reporterEmail: string | null = null;
+  // Determine recipient email
+  let recipientEmail: string | null = null;
   
-  // Check if bug has email in createdBy
-  if (bug.createdBy && bug.createdBy.includes('@')) {
-    reporterEmail = bug.createdBy;
-  } else if (bug.convertedFromReportId) {
-    // If converted from report, get email from report
-    const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
-    const reportDoc = await collection.doc(bug.convertedFromReportId).get();
-    if (reportDoc.exists) {
-      const reportData = reportDoc.data();
-      reporterEmail = reportData?.email || null;
+  // If assignedToEmail is provided, use that (for assignment notifications)
+  if (assignedToEmail) {
+    recipientEmail = assignedToEmail;
+  } else {
+    // Otherwise, get reporter email from bug or from original report
+    if (bug.createdBy && bug.createdBy.includes('@')) {
+      recipientEmail = bug.createdBy;
+    } else if (bug.convertedFromReportId) {
+      // If converted from report, get email from report
+      const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+      const reportDoc = await collection.doc(bug.convertedFromReportId).get();
+      if (reportDoc.exists) {
+        const reportData = reportDoc.data();
+        recipientEmail = reportData?.email || null;
+      }
     }
   }
   
-  if (!reporterEmail) {
-    throw new Error('No reporter email found for this bug');
+  if (!recipientEmail) {
+    throw new Error('No recipient email found for this bug');
   }
   
   // Call Firebase Cloud Function to send email
@@ -532,7 +641,7 @@ export async function sendBugUpdateEmail(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      to: reporterEmail,
+      to: recipientEmail,
       subject: subject,
       body: body,
       issueId: bugId,
@@ -546,11 +655,13 @@ export async function sendBugUpdateEmail(
     throw new Error(result.error || 'Failed to send email');
   }
   
-  // Update bug with email metadata
-  await updateDocument<Bug>(projectId, 'bugs', bugId, {
-    lastEmailSent: new Date(),
-    lastEmailSubject: subject,
-  });
+  // Update bug with email metadata (only if sending to reporter, not assignee)
+  if (!assignedToEmail) {
+    await updateDocument<Bug>(projectId, 'bugs', bugId, {
+      lastEmailSent: new Date(),
+      lastEmailSubject: subject,
+    });
+  }
 }
 
 /**

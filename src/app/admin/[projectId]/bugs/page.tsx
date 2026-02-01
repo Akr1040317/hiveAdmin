@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Filter, Sort } from '@/lib/views';
 import { format } from 'date-fns';
+import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
 
 function BugsContent() {
   const { project, projectId } = useProject();
@@ -454,6 +455,16 @@ ${bug.notes}
         );
       },
     },
+    ...(supportsAssignment(projectId) ? [{
+      key: 'assignedTo',
+      header: 'ASSIGNED TO',
+      sortable: true,
+      render: (bug) => (
+        <span className="text-xs text-gray-400">
+          {bug.assignedTo ? bug.assignedTo.split('@')[0] : 'Unassigned'}
+        </span>
+      ),
+    }] : []),
     {
       key: 'platform',
       header: 'BUG TYPE',
@@ -937,6 +948,14 @@ ${bug.notes}
         } : undefined}
         lastEmailSent={selectedBug?.lastEmailSent}
         lastEmailSubject={selectedBug?.lastEmailSubject}
+        assignedTo={selectedBug?.assignedTo || null}
+        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        onAssignedToChange={(email) => {
+          if (selectedBug) {
+            handleUpdate({ assignedTo: email || undefined });
+          }
+        }}
+        showAssignment={supportsAssignment(projectId)}
         accent={accent}
       />
     </div>

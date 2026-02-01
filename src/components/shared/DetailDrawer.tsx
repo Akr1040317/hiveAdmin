@@ -49,6 +49,11 @@ interface DetailDrawerProps {
   onSendEmail?: (subject: string, body: string) => Promise<void>;
   lastEmailSent?: Date;
   lastEmailSubject?: string;
+  // Assignment functionality
+  assignedTo?: string | null;
+  teamMembers?: string[];
+  onAssignedToChange?: (email: string | null) => void;
+  showAssignment?: boolean;
 }
 
 export function DetailDrawer({
@@ -70,6 +75,10 @@ export function DetailDrawer({
   onSendEmail,
   lastEmailSent,
   lastEmailSubject,
+  assignedTo,
+  teamMembers = [],
+  onAssignedToChange,
+  showAssignment = false,
 }: DetailDrawerProps) {
   const [localTitle, setLocalTitle] = useState(title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -266,12 +275,35 @@ export function DetailDrawer({
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {/* Properties */}
-            {properties.length > 0 && (
+            {(properties.length > 0 || showAssignment) && (
               <div>
                 <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
                   Properties
                 </h3>
                 <div className="space-y-3">
+                  {/* Assignment Field */}
+                  {showAssignment && onAssignedToChange && (
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-gray-400 w-24 flex-shrink-0">
+                        Assigned To
+                      </label>
+                      <div className="flex-1">
+                        <Select
+                          value={assignedTo || ''}
+                          onChange={(e) => onAssignedToChange(e.target.value || null)}
+                          className="h-8 text-sm"
+                          accent={accent}
+                        >
+                          <option value="">Unassigned</option>
+                          {teamMembers.map((email) => (
+                            <option key={email} value={email}>
+                              {email.split('@')[0]}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+                  )}
                   {properties.map((prop) => (
                     <div key={prop.key} className="flex items-center gap-3">
                       <label className="text-xs text-gray-400 w-24 flex-shrink-0">

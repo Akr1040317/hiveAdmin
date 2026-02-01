@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Filter, Sort } from '@/lib/views';
 import { format } from 'date-fns';
+import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
 
 function TasksContent() {
   const { project, projectId } = useProject();
@@ -251,6 +252,16 @@ function TasksContent() {
         );
       },
     },
+    ...(supportsAssignment(projectId) ? [{
+      key: 'assignedTo',
+      header: 'ASSIGNED TO',
+      sortable: true,
+      render: (task) => (
+        <span className="text-xs text-gray-400">
+          {task.assignedTo ? task.assignedTo.split('@')[0] : 'Unassigned'}
+        </span>
+      ),
+    }] : []),
     {
       key: 'dueDate',
       header: 'DUE DATE',
@@ -543,6 +554,14 @@ function TasksContent() {
           }
         }}
         onDelete={selectedTask ? handleDelete : undefined}
+        assignedTo={selectedTask?.assignedTo || null}
+        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        onAssignedToChange={(email) => {
+          if (selectedTask) {
+            handleUpdate({ assignedTo: email || undefined });
+          }
+        }}
+        showAssignment={supportsAssignment(projectId)}
         accent={accent}
       />
     </div>

@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { Filter, Sort } from '@/lib/views';
 import { format } from 'date-fns';
+import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
 
 function FeaturesContent() {
   const { project, projectId } = useProject();
@@ -161,6 +162,16 @@ function FeaturesContent() {
         return <Badge className={cn('text-xs capitalize', colors[f.priority])}>{f.priority}</Badge>;
       },
     },
+    ...(supportsAssignment(projectId) ? [{
+      key: 'assignedTo',
+      header: 'ASSIGNED TO',
+      sortable: true,
+      render: (f) => (
+        <span className="text-xs text-gray-400">
+          {f.assignedTo ? f.assignedTo.split('@')[0] : 'Unassigned'}
+        </span>
+      ),
+    }] : []),
     {
       key: 'area',
       header: 'Feature Area',
@@ -397,6 +408,14 @@ function FeaturesContent() {
           }
         }}
         onDelete={selectedFeature ? handleDelete : undefined}
+        assignedTo={selectedFeature?.assignedTo || null}
+        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        onAssignedToChange={(email) => {
+          if (selectedFeature) {
+            handleUpdate({ assignedTo: email || undefined });
+          }
+        }}
+        showAssignment={supportsAssignment(projectId)}
         accent={accent}
       />
     </div>
