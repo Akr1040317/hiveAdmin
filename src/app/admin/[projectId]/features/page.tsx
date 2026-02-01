@@ -7,6 +7,7 @@ import { ViewToolbar } from '@/components/shared/ViewToolbar';
 import { ViewTabs } from '@/components/shared/ViewTabs';
 import { TableView, TableColumn } from '@/components/shared/TableView';
 import { BoardView } from '@/components/shared/BoardView';
+import { CalendarView } from '@/components/shared/CalendarView';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { Feature, getFeatures, createFeature, updateFeature, deleteFeature } from '@/app/actions/features';
 import { useServerAction } from '@/hooks/useServerAction';
@@ -168,6 +169,16 @@ function FeaturesContent() {
       render: (f) => <Badge variant="secondary" className="text-xs capitalize">{f.area}</Badge>,
     },
     {
+      key: 'dueDate',
+      header: 'DUE DATE',
+      sortable: false,
+      render: (f) => (
+        <span className="text-xs text-gray-400">
+          {f.dueDate ? format(new Date(f.dueDate), 'MMM d, yyyy') : '—'}
+        </span>
+      ),
+    },
+    {
       key: 'updatedAt',
       header: 'Updated',
       sortable: true,
@@ -198,7 +209,7 @@ function FeaturesContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['table', 'board']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs availableViewTypes={['table', 'board', 'calendar']} onViewTypeChange={switchViewType} accent={accent} />
 
       <ViewToolbar
         searchValue={search}
@@ -245,7 +256,7 @@ function FeaturesContent() {
             emptyMessage="No features found. Create your first feature!"
             accent={accent}
           />
-        ) : (
+        ) : viewType === 'board' ? (
           <BoardView
             data={filteredFeatures}
             columns={boardColumns}
@@ -272,6 +283,24 @@ function FeaturesContent() {
             onCardMove={handleCardMove}
             onAddCard={(status) => {
               setSelectedFeature({ ...selectedFeature, status: status as Feature['status'] } as Feature);
+              setIsDrawerOpen(true);
+            }}
+            emptyMessage="No features found. Create your first feature!"
+            accent={accent}
+          />
+        ) : (
+          <CalendarView
+            data={filteredFeatures}
+            getDate={(f) => f.dueDate ? new Date(f.dueDate) : (f.updatedAt ? new Date(f.updatedAt) : new Date(f.createdAt))}
+            getTitle={(f) => f.title}
+            getStatus={(f) => f.status}
+            getColor={(f) => {
+              if (f.priority === 'high') return '#ef4444'; // red
+              if (f.priority === 'medium') return '#f97316'; // orange
+              return '#22c55e'; // green for low
+            }}
+            onItemClick={(f) => {
+              setSelectedFeature(f);
               setIsDrawerOpen(true);
             }}
             emptyMessage="No features found. Create your first feature!"
@@ -319,6 +348,28 @@ function FeaturesContent() {
             options: areaOptions,
             onChange: (value) => {
               if (selectedFeature) handleUpdate({ area: value as Feature['area'] });
+            },
+          },
+          {
+            key: 'dueDate',
+            label: 'Due Date',
+            type: 'date',
+            value: selectedFeature?.dueDate,
+            onChange: (value) => {
+              if (selectedFeature) {
+                handleUpdate({ dueDate: value });
+              }
+            },
+          },
+          {
+            key: 'completionDate',
+            label: 'Completion Date',
+            type: 'date',
+            value: selectedFeature?.completionDate,
+            onChange: (value) => {
+              if (selectedFeature) {
+                handleUpdate({ completionDate: value });
+              }
             },
           },
         ]}

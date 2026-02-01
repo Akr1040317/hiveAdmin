@@ -13,6 +13,7 @@ const navigationItems = [
   { href: 'meetings', label: 'Meetings' },
   { href: 'bugs', label: 'Bugs' },
   { href: 'features', label: 'Features' },
+  { href: 'tasks', label: 'Tasks' },
   { href: 'content', label: 'Content' },
   { href: 'documents', label: 'Documents' },
 ];

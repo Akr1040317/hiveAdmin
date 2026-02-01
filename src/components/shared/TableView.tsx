@@ -136,27 +136,22 @@ export function TableView<T extends { id: string }>({
           </TableHeader>
           <TableBody>
             {sortedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={visibleCols.length} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3">
-                    <FileText className="w-12 h-12 text-gray-600" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-400 mb-1">{emptyMessage}</p>
-                      {onQuickAdd && (
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          accent={accent}
-                          onClick={onQuickAdd}
-                          className="mt-2"
-                        >
-                          Create First Item
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </TableCell>
-              </TableRow>
+              // Show empty rows instead of empty state message
+              Array.from({ length: 5 }).map((_, idx) => (
+                <TableRow
+                  key={`empty-${idx}`}
+                  className="border-b border-border-subtle"
+                >
+                  {visibleCols.map((column) => (
+                    <TableCell
+                      key={String(column.key)}
+                      className="px-3 py-2"
+                    >
+                      <span className="text-xs text-gray-600">-</span>
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : (
               sortedData.map((item) => (
                 <TableRow

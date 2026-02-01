@@ -25,8 +25,8 @@ export interface View {
   groupBy?: string; // for board grouping (e.g., 'status')
   dateField?: string; // for calendar (e.g., 'publishAt', 'startsAt')
   isDefault?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: Date | string; // Can be Date object or ISO string (from server actions)
+  updatedAt?: Date | string; // Can be Date object or ISO string (from server actions)
 }
 
 export function createDefaultView(moduleName: string, viewType: ViewType, options?: {

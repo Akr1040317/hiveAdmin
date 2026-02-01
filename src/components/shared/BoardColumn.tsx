@@ -1,8 +1,6 @@
 'use client';
 
 import React from 'react';
-import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { BoardCard } from './BoardCard';
 import { Button } from '@/components/ui/Button';
 import { Plus } from 'lucide-react';
@@ -12,6 +10,7 @@ import { useProject } from '@/contexts/ProjectContext';
 interface BoardColumnProps {
   id: string;
   title: string;
+  status: string;
   cardIds: string[];
   cards: Array<{
     id: string;
@@ -20,23 +19,43 @@ interface BoardColumnProps {
     badges?: { label: string; variant?: 'critical' | 'high' | 'medium' | 'low' | 'default' | 'secondary'; color?: string }[];
     updatedAt?: Date;
     userId?: string;
+    draggable?: boolean;
+    item?: any; // Full item for drag handlers
+    isReport?: boolean;
+    isConverted?: boolean;
   }>;
   onCardClick?: (cardId: string) => void;
+  onCardConvert?: (cardId: string) => void;
   onAddCard?: () => void;
   accent?: 'purple' | 'orange' | 'blue' | boolean;
+  dragOverColumn?: string | null;
+  onDragStart?: (e: React.DragEvent, item: any) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent, columnId: string) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent, targetStatus: string) => void;
 }
 
 export function BoardColumn({
   id,
   title,
+  status,
   cardIds,
   cards,
   onCardClick,
+  onCardConvert,
   onAddCard,
   accent = false,
+  dragOverColumn,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: BoardColumnProps) {
   const { project } = useProject();
-  const { setNodeRef, isOver } = useDroppable({ id });
+  
+  const isDragOver = dragOverColumn === id;
 
   const getAccentColor = () => {
     if (accent === true) return 'purple';
@@ -83,33 +102,61 @@ export function BoardColumn({
 
       {/* Cards */}
       <div
-        ref={setNodeRef}
         className={cn(
           'flex-1 overflow-y-auto transition-all duration-200 p-2 min-h-[400px]',
-          isOver && 'bg-background-hover/30 ring-2 ring-offset-2 ring-offset-background',
-          isOver && accentColor === 'purple' && 'ring-violet-500/50',
-          isOver && accentColor === 'orange' && 'ring-orange-500/50',
-          isOver && accentColor === 'blue' && 'ring-blue-500/50'
+          isDragOver && 'bg-background-hover/30 ring-2 ring-offset-2 ring-offset-background',
+          isDragOver && accentColor === 'purple' && 'ring-violet-500/50',
+          isDragOver && accentColor === 'orange' && 'ring-orange-500/50',
+          isDragOver && accentColor === 'blue' && 'ring-blue-500/50'
         )}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          if (onDragOver) {
+            onDragOver(e, id);
+          }
+        }}
+        onDragLeave={(e) => {
+          // Only trigger if we're actually leaving the column (not just moving to a child)
+          const relatedTarget = e.relatedTarget as Node;
+          if (!e.currentTarget.contains(relatedTarget) && relatedTarget !== e.currentTarget) {
+            if (onDragLeave) {
+              onDragLeave();
+            }
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          if (onDrop) {
+            onDrop(e, status);
+          }
+        }}
       >
-        <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
-          {cards.map((card) => (
-            <BoardCard
-              key={card.id}
-              id={card.id}
-              title={card.title}
-              subtitle={card.subtitle}
-              badges={card.badges}
-              updatedAt={card.updatedAt}
-              userId={card.userId}
-              onClick={() => onCardClick?.(card.id)}
-              accent={accent}
-            />
-          ))}
-        </SortableContext>
+        {cards.map((card) => (
+          <BoardCard
+            key={card.id}
+            id={card.id}
+            title={card.title}
+            subtitle={card.subtitle}
+            badges={card.badges}
+            updatedAt={card.updatedAt}
+            userId={card.userId}
+            onClick={() => onCardClick?.(card.id)}
+            accent={accent}
+            draggable={card.draggable !== false}
+            onDragStart={onDragStart && card.item ? (e) => onDragStart(e, card.item) : undefined}
+            onDragEnd={onDragEnd}
+            onConvert={onCardConvert ? () => onCardConvert(card.id) : undefined}
+            isReport={card.isReport}
+            isConverted={card.isConverted}
+          />
+        ))}
         {cards.length === 0 && (
           <div className="text-center py-12">
-            <div className="text-xs text-gray-500 mb-2">No items</div>
+            <div className="text-xs text-gray-500 mb-2">No issues</div>
             {onAddCard && (
               <Button
                 size="sm"

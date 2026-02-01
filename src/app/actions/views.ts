@@ -10,18 +10,26 @@ import {
 } from '@/lib/firebase/data-access';
 import { ProjectId } from '@/lib/projects';
 import { View } from '@/lib/views';
+import { serializeForClient } from '@/lib/utils/serialize';
 
 const COLLECTION_NAME = 'views';
 
 export async function getViews(projectId: ProjectId, moduleName: string, token?: string | null): Promise<View[]> {
   await requireAuth(token);
   const views = await getCollectionData<View>(projectId, COLLECTION_NAME);
-  return views.filter(v => v.moduleName === moduleName);
+  const filtered = views.filter(v => v.moduleName === moduleName);
+  
+  // Recursively serialize all Date objects and non-serializable values
+  return serializeForClient(filtered) as View[];
 }
 
 export async function getView(projectId: ProjectId, viewId: string, token?: string | null): Promise<View | null> {
   await requireAuth(token);
-  return getDocumentData<View>(projectId, COLLECTION_NAME, viewId);
+  const view = await getDocumentData<View>(projectId, COLLECTION_NAME, viewId);
+  if (!view) return null;
+  
+  // Recursively serialize all Date objects and non-serializable values
+  return serializeForClient(view) as View;
 }
 
 export async function createView(

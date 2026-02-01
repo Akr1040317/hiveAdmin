@@ -140,3 +140,62 @@ export async function queryCollection<T = DocumentData>(
   const snapshot = await query.get();
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
 }
+
+/**
+ * Get a top-level collection reference (not under projects/{projectId}/)
+ */
+export async function getTopLevelCollection(
+  projectId: ProjectId,
+  collectionName: string
+): Promise<CollectionReference<DocumentData>> {
+  const db = await getProjectFirestore(projectId);
+  return db.collection(collectionName);
+}
+
+/**
+ * Get all documents from a top-level collection
+ */
+export async function getTopLevelCollectionData<T = DocumentData>(
+  projectId: ProjectId,
+  collectionName: string
+): Promise<T[]> {
+  const collection = await getTopLevelCollection(projectId, collectionName);
+  const snapshot = await collection.get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
+}
+
+/**
+ * Query documents from a top-level collection with filters
+ */
+export async function queryTopLevelCollection<T = DocumentData>(
+  projectId: ProjectId,
+  collectionName: string,
+  queryFn?: (query: Query<DocumentData>) => Query<DocumentData>
+): Promise<T[]> {
+  let query: Query<DocumentData> = await getTopLevelCollection(projectId, collectionName);
+  
+  if (queryFn) {
+    query = queryFn(query);
+  }
+  
+  const snapshot = await query.get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
+}
+
+/**
+ * Update a document in a top-level collection
+ */
+export async function updateTopLevelDocument<T = DocumentData>(
+  projectId: ProjectId,
+  collectionName: string,
+  documentId: string,
+  data: Partial<Omit<T, 'id'>>
+): Promise<void> {
+  const collection = await getTopLevelCollection(projectId, collectionName);
+  const docRef = collection.doc(documentId);
+  
+  await docRef.update({
+    ...data,
+    updatedAt: new Date(),
+  });
+}

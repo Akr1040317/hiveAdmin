@@ -10,6 +10,7 @@ import {
   queryCollection,
 } from '@/lib/firebase/data-access';
 import { ProjectId } from '@/lib/projects';
+import { serializeForClient } from '@/lib/utils/serialize';
 
 export interface Feature {
   id: string;
@@ -22,16 +23,25 @@ export interface Feature {
   updatedAt: Date;
   createdBy: string;
   order?: number; // For board view ordering
+  dueDate?: Date; // Target completion date
+  completionDate?: Date; // Actual completion date
 }
 
 export async function getFeatures(projectId: ProjectId, token?: string | null): Promise<Feature[]> {
   await requireAuth(token);
-  return getCollectionData<Feature>(projectId, 'features');
+  const features = await getCollectionData<Feature>(projectId, 'features');
+  
+  // Recursively serialize all Date objects and non-serializable values
+  return serializeForClient(features) as Feature[];
 }
 
 export async function getFeature(projectId: ProjectId, featureId: string, token?: string | null): Promise<Feature | null> {
   await requireAuth(token);
-  return getDocumentData<Feature>(projectId, 'features', featureId);
+  const feature = await getDocumentData<Feature>(projectId, 'features', featureId);
+  if (!feature) return null;
+  
+  // Recursively serialize all Date objects and non-serializable values
+  return serializeForClient(feature) as Feature;
 }
 
 export async function createFeature(

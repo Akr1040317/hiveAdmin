@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Copy, ExternalLink, Calendar, User } from 'lucide-react';
+import { X, Copy, ExternalLink, Calendar, User, Envelope, Check, Wand2, Send, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -38,7 +38,17 @@ interface DetailDrawerProps {
   };
   onSave?: () => void;
   onDelete?: () => void;
+  onUnconvert?: () => void;
   accent?: 'purple' | 'orange' | 'blue' | boolean;
+  // Copy details functionality
+  onCopyDetails?: () => void;
+  copyDetailsText?: string;
+  // Email functionality
+  reporterEmail?: string | null;
+  onGenerateEmail?: () => Promise<{ subject: string; body: string }>;
+  onSendEmail?: (subject: string, body: string) => Promise<void>;
+  lastEmailSent?: Date;
+  lastEmailSubject?: string;
 }
 
 export function DetailDrawer({
@@ -51,14 +61,34 @@ export function DetailDrawer({
   metadata,
   onSave,
   onDelete,
+  onUnconvert,
   accent = false,
+  onCopyDetails,
+  copyDetailsText,
+  reporterEmail,
+  onGenerateEmail,
+  onSendEmail,
+  lastEmailSent,
+  lastEmailSubject,
 }: DetailDrawerProps) {
   const [localTitle, setLocalTitle] = useState(title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [copiedDetails, setCopiedDetails] = useState(false);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [generatingEmail, setGeneratingEmail] = useState(false);
 
   useEffect(() => {
     setLocalTitle(title);
   }, [title]);
+
+  useEffect(() => {
+    if (showEmailComposer && !emailSubject) {
+      setEmailSubject(lastEmailSubject || `Update: ${title || 'Bug Report'}`);
+    }
+  }, [showEmailComposer, lastEmailSubject, title]);
 
   const handleTitleBlur = () => {
     setIsEditingTitle(false);
@@ -71,6 +101,74 @@ export function DetailDrawer({
     const url = window.location.href;
     navigator.clipboard.writeText(url);
     // Could show a toast here
+  };
+
+  const handleCopyDetails = async () => {
+    if (onCopyDetails && copyDetailsText) {
+      try {
+        await navigator.clipboard.writeText(copyDetailsText);
+        setCopiedDetails(true);
+        setTimeout(() => {
+          setCopiedDetails(false);
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = copyDetailsText;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setCopiedDetails(true);
+          setTimeout(() => {
+            setCopiedDetails(false);
+          }, 2000);
+        } catch (err) {
+          console.error('Failed to copy to clipboard:', err);
+        }
+        document.body.removeChild(textArea);
+      }
+    }
+  };
+
+  const handleGenerateEmail = async () => {
+    if (!onGenerateEmail) return;
+    
+    setGeneratingEmail(true);
+    try {
+      const result = await onGenerateEmail();
+      setEmailSubject(result.subject);
+      setEmailBody(result.body);
+    } catch (error) {
+      console.error('Error generating email:', error);
+      alert(`Failed to generate email: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setGeneratingEmail(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!onSendEmail || !emailSubject.trim() || !emailBody.trim()) {
+      alert('Please fill in all email fields');
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      await onSendEmail(emailSubject, emailBody);
+      setShowEmailComposer(false);
+      setEmailSubject('');
+      setEmailBody('');
+      alert('Email sent successfully!');
+    } catch (error) {
+      console.error('Error sending email:', error);
+      alert(`Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   return (
@@ -115,6 +213,27 @@ export function DetailDrawer({
               )}
             </div>
             <div className="flex items-center gap-1">
+              {onCopyDetails && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCopyDetails}
+                  className="h-7 px-2 text-xs"
+                  title="Copy details"
+                >
+                  {copiedDetails ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 mr-1" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 mr-1" />
+                      Copy Details
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -253,6 +372,123 @@ export function DetailDrawer({
               </div>
             ))}
 
+            {/* Email Section */}
+            {reporterEmail && onSendEmail && (
+              <div className="pt-4 border-t border-border-subtle">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                    <Envelope className="w-3.5 h-3.5" />
+                    Send Email Update
+                  </h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setShowEmailComposer(!showEmailComposer);
+                      if (!showEmailComposer && !emailSubject) {
+                        setEmailSubject(lastEmailSubject || `Update: ${title || 'Bug Report'}`);
+                      }
+                    }}
+                    className="text-xs h-6 px-2"
+                  >
+                    {showEmailComposer ? 'Cancel' : 'Compose Email'}
+                  </Button>
+                </div>
+                {showEmailComposer && (
+                  <div className="space-y-3 bg-background-card/50 p-3 rounded-notion border border-border-subtle">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">To:</label>
+                      <Input
+                        type="email"
+                        value={reporterEmail}
+                        disabled
+                        className="h-7 text-sm opacity-60"
+                        accent={accent}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">Subject:</label>
+                      <Input
+                        type="text"
+                        value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)}
+                        className="h-7 text-sm"
+                        placeholder="Email subject..."
+                        accent={accent}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">Message:</label>
+                      <textarea
+                        value={emailBody}
+                        onChange={(e) => setEmailBody(e.target.value)}
+                        className={cn(
+                          'w-full min-h-[120px] rounded-notion border border-border-subtle bg-background-card px-2.5 py-2',
+                          'text-sm text-gray-100 placeholder:text-gray-500',
+                          'focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-background transition-all duration-notion',
+                          accent
+                            ? 'focus:ring-violet-500/40 focus:border-violet-500/30'
+                            : 'focus:ring-gray-500/40 focus:border-border',
+                          'resize-none'
+                        )}
+                        placeholder="Write your message here..."
+                        rows={6}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {onGenerateEmail && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleGenerateEmail}
+                          disabled={generatingEmail}
+                          className="text-xs h-7 px-2"
+                        >
+                          {generatingEmail ? (
+                            <>
+                              <Wand2 className="w-3 h-3 mr-1 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="w-3 h-3 mr-1" />
+                              Generate with AI
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={handleSendEmail}
+                        disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                        accent={accent}
+                        className="text-xs h-7 px-2 ml-auto"
+                      >
+                        {sendingEmail ? (
+                          <>
+                            <Send className="w-3 h-3 mr-1 animate-pulse" />
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3 h-3 mr-1" />
+                            Send Email
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {lastEmailSent && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Last sent: {format(new Date(lastEmailSent), 'MMM d, yyyy h:mm a')}
+                    {lastEmailSubject && ` - "${lastEmailSubject}"`}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Metadata */}
             {metadata && (
               <div className="pt-4 border-t border-border-subtle">
@@ -284,18 +520,30 @@ export function DetailDrawer({
           </div>
 
           {/* Footer */}
-          {(onSave || onDelete) && (
+          {(onSave || onDelete || onUnconvert) && (
             <div className="flex items-center justify-between p-4 border-t border-border-subtle">
-              {onDelete && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={onDelete}
-                  className="text-red-400 hover:text-red-300"
-                >
-                  Delete
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {onUnconvert && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onUnconvert}
+                    className="text-orange-400 hover:text-orange-300"
+                  >
+                    Unconvert to Report
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onDelete}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
               {onSave && (
                 <Button
                   size="sm"

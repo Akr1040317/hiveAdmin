@@ -9,45 +9,110 @@ import { TableView, TableColumn } from '@/components/shared/TableView';
 import { CalendarView } from '@/components/shared/CalendarView';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
 import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem } from '@/app/actions/calendar';
+import { Task, getTasks } from '@/app/actions/tasks';
+import { Bug, getBugs } from '@/app/actions/bugs';
+import { Feature, getFeatures } from '@/app/actions/features';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { Filter, Sort } from '@/lib/views';
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
+
+type UnifiedCalendarItem = 
+  | (CalendarItem & { __type: 'calendar' })
+  | (Task & { __type: 'task'; dueDate: Date })
+  | (Bug & { __type: 'bug'; dueDate: Date })
+  | (Feature & { __type: 'feature'; dueDate: Date });
 
 function CalendarItemsContent() {
   const { project, projectId } = useProject();
+  const router = useRouter();
   const { currentView, updateCurrentView, switchViewType } = useView();
   const accentClasses = project?.accentClasses;
   
   const [calendarItems, setCalendarItems] = useState<CalendarItem[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [bugs, setBugs] = useState<Bug[]>([]);
+  const [features, setFeatures] = useState<Feature[]>([]);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
 
-  const { execute: loadCalendarItems, loading } = useServerAction(getCalendarItems);
+  const { execute: loadCalendarItems, loading: loadingCalendar } = useServerAction(getCalendarItems);
+  const { execute: loadTasks, loading: loadingTasks } = useServerAction(getTasks);
+  const { execute: loadBugs, loading: loadingBugs } = useServerAction(getBugs);
+  const { execute: loadFeatures, loading: loadingFeatures } = useServerAction(getFeatures);
   const { execute: handleCreateItem } = useServerAction(createCalendarItem);
   const { execute: handleUpdateItem } = useServerAction(updateCalendarItem);
   const { execute: handleDeleteItem } = useServerAction(deleteCalendarItem);
 
+  const loading = loadingCalendar || loadingTasks || loadingBugs || loadingFeatures;
+
   useEffect(() => {
     if (projectId) {
-      loadCalendarItems(projectId).then((data) => {
-        if (data) setCalendarItems(data);
-      });
+      Promise.all([
+        loadCalendarItems(projectId).then((data) => {
+          if (data) setCalendarItems(data);
+        }),
+        loadTasks(projectId).then((data) => {
+          if (data) setTasks(data);
+        }),
+        loadBugs(projectId).then((data) => {
+          if (data) setBugs(data);
+        }),
+        loadFeatures(projectId).then((data) => {
+          if (data) setFeatures(data);
+        }),
+      ]);
     }
   }, [projectId]);
 
+  // Combine all items with due dates for calendar view
+  const allCalendarItems = useMemo(() => {
+    const items: UnifiedCalendarItem[] = [];
+    
+    // Add calendar items
+    calendarItems.forEach(item => {
+      items.push({ ...item, __type: 'calendar' });
+    });
+    
+    // Add tasks with due dates
+    tasks.forEach(task => {
+      if (task.dueDate) {
+        items.push({ ...task, __type: 'task', dueDate: new Date(task.dueDate) });
+      }
+    });
+    
+    // Add bugs with due dates
+    bugs.forEach(bug => {
+      if (bug.dueDate) {
+        items.push({ ...bug, __type: 'bug', dueDate: new Date(bug.dueDate) });
+      }
+    });
+    
+    // Add features with due dates
+    features.forEach(feature => {
+      if (feature.dueDate) {
+        items.push({ ...feature, __type: 'feature', dueDate: new Date(feature.dueDate) });
+      }
+    });
+    
+    return items;
+  }, [calendarItems, tasks, bugs, features]);
+
   const filteredItems = useMemo(() => {
-    let result = calendarItems;
+    let result = allCalendarItems;
     if (search) {
       const searchLower = search.toLowerCase();
-      result = result.filter(item => 
-        item.title.toLowerCase().includes(searchLower) ||
-        item.notes.toLowerCase().includes(searchLower)
-      );
+      result = result.filter(item => {
+        const title = item.__type === 'calendar' ? item.title : item.title;
+        const notes = item.__type === 'calendar' ? item.notes : '';
+        return title.toLowerCase().includes(searchLower) || 
+               (notes && notes.toLowerCase().includes(searchLower));
+      });
     }
     filters.forEach(filter => {
       if (filter.operator === 'equals') {
@@ -57,7 +122,7 @@ function CalendarItemsContent() {
       }
     });
     return result;
-  }, [calendarItems, search, filters]);
+  }, [allCalendarItems, search, filters]);
 
   const handleCreate = async (data: Partial<CalendarItem>) => {
     if (!projectId) return;
@@ -197,7 +262,7 @@ function CalendarItemsContent() {
           <div className={cn('w-1 h-8 rounded-full', accentClasses?.bg.replace('/10', ''))} />
           <div>
             <h1 className={cn('text-2xl font-bold mb-0.5', accentClasses?.text)}>Calendar</h1>
-            <p className="text-sm text-gray-400">Important dates, deadlines, and milestones</p>
+            <p className="text-sm text-gray-400">Important dates, deadlines, and milestones from tasks, bugs, features, and calendar items</p>
           </div>
         </div>
       </div>
@@ -231,13 +296,65 @@ function CalendarItemsContent() {
         ) : viewType === 'calendar' ? (
           <CalendarView
             data={filteredItems}
-            getDate={(item) => new Date(item.date)}
-            getTitle={(item) => item.title}
-            getStatus={(item) => item.status}
-            getColor={(item) => getTypeColor(item.type)}
+            getDate={(item) => {
+              if (item.__type === 'calendar') {
+                return new Date(item.date);
+              } else {
+                return item.dueDate;
+              }
+            }}
+            getTitle={(item) => {
+              if (item.__type === 'calendar') {
+                return item.title;
+              } else {
+                const typeLabel = item.__type === 'task' ? '[Task]' : item.__type === 'bug' ? '[Bug]' : '[Feature]';
+                return `${typeLabel} ${item.title}`;
+              }
+            }}
+            getStatus={(item) => {
+              if (item.__type === 'calendar') {
+                return item.status;
+              } else if (item.__type === 'task') {
+                return item.status;
+              } else if (item.__type === 'bug') {
+                return item.status;
+              } else {
+                return item.status;
+              }
+            }}
+            getColor={(item) => {
+              if (item.__type === 'calendar') {
+                return getTypeColor(item.type);
+              } else if (item.__type === 'task') {
+                if (item.priority === 'high') return '#ef4444'; // red
+                if (item.priority === 'medium') return '#f97316'; // orange
+                return '#22c55e'; // green
+              } else if (item.__type === 'bug') {
+                if (item.severity === 'critical') return '#ef4444'; // red
+                if (item.severity === 'high') return '#f97316'; // orange
+                if (item.severity === 'medium') return '#eab308'; // yellow
+                return '#22c55e'; // green
+              } else {
+                // feature
+                if (item.priority === 'high') return '#ef4444'; // red
+                if (item.priority === 'medium') return '#f97316'; // orange
+                return '#22c55e'; // green
+              }
+            }}
             onItemClick={(item) => {
-              setSelectedItem(item);
-              setIsDrawerOpen(true);
+              if (item.__type === 'calendar') {
+                setSelectedItem(item);
+                setIsDrawerOpen(true);
+              } else {
+                // Navigate to the appropriate page
+                if (item.__type === 'task') {
+                  router.push(`/admin/${projectId}/tasks`);
+                } else if (item.__type === 'bug') {
+                  router.push(`/admin/${projectId}/bugs`);
+                } else if (item.__type === 'feature') {
+                  router.push(`/admin/${projectId}/features`);
+                }
+              }
             }}
             emptyMessage="No calendar items found. Create your first item!"
             accent={accent}

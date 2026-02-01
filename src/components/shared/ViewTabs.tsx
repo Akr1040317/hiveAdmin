@@ -3,7 +3,7 @@
 import React from 'react';
 import { ViewType } from '@/lib/views';
 import { Button } from '@/components/ui/Button';
-import { Plus, MoreVertical } from 'lucide-react';
+import { Plus, MoreVertical, Grid3x3, Table as TableIcon, Calendar } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { cn } from '@/lib/utils';
 import { useProject } from '@/contexts/ProjectContext';
@@ -41,8 +41,14 @@ export function ViewTabs({
 
   const viewTypeLabels: Record<ViewType, string> = {
     table: 'Table',
-    board: 'Board',
+    board: 'Kanban',
     calendar: 'Calendar',
+  };
+
+  const viewTypeIcons: Record<ViewType, React.ReactNode> = {
+    table: <TableIcon className="w-4 h-4" />,
+    board: <Grid3x3 className="w-4 h-4" />,
+    calendar: <Calendar className="w-4 h-4" />,
   };
 
   return (
@@ -61,7 +67,10 @@ export function ViewTabs({
                 : 'text-gray-400 hover:bg-background-hover/50'
             )}
           >
-            {viewTypeLabels[viewType]}
+            <span className="flex items-center gap-2">
+              {viewTypeIcons[viewType]}
+              {viewTypeLabels[viewType]}
+            </span>
             {isActive && (
               <div
                 className={cn(
