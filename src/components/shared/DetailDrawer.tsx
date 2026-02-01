@@ -54,6 +54,8 @@ interface DetailDrawerProps {
   teamMembers?: string[];
   onAssignedToChange?: (email: string | null) => void;
   showAssignment?: boolean;
+  // Custom content to render after body fields
+  customContent?: React.ReactNode;
 }
 
 export function DetailDrawer({
@@ -79,6 +81,7 @@ export function DetailDrawer({
   teamMembers = [],
   onAssignedToChange,
   showAssignment = false,
+  customContent,
 }: DetailDrawerProps) {
   const [localTitle, setLocalTitle] = useState(title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -520,6 +523,9 @@ export function DetailDrawer({
                 )}
               </div>
             )}
+
+            {/* Custom Content */}
+            {customContent}
 
             {/* Metadata */}
             {metadata && (

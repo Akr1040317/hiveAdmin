@@ -8,7 +8,7 @@ import { ViewTabs } from '@/components/shared/ViewTabs';
 import { TableView, TableColumn } from '@/components/shared/TableView';
 import { CalendarView } from '@/components/shared/CalendarView';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
-import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem } from '@/app/actions/calendar';
+import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem, sendCalendarItemNotification, sendCalendarItemReminder } from '@/app/actions/calendar';
 import { Task, getTasks } from '@/app/actions/tasks';
 import { Bug, getBugs } from '@/app/actions/bugs';
 import { Feature, getFeatures } from '@/app/actions/features';
@@ -18,6 +18,10 @@ import { Badge } from '@/components/ui/Badge';
 import { Filter, Sort } from '@/lib/views';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
+import { AttendeeSelector } from '@/components/shared/AttendeeSelector';
+import { Button } from '@/components/ui/Button';
+import { Mail, Clock } from 'lucide-react';
 
 type UnifiedCalendarItem = 
   | (CalendarItem & { __type: 'calendar' })
@@ -40,6 +44,18 @@ function CalendarItemsContent() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  const [newItemData, setNewItemData] = useState<Partial<CalendarItem>>({
+    title: 'New Calendar Item',
+    type: 'event',
+    date: new Date(),
+    notes: '',
+    status: 'planned',
+    time: '',
+    attendees: [],
+    reminderDays: [],
+  });
+  const [sendingNotification, setSendingNotification] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const { execute: loadCalendarItems, loading: loadingCalendar } = useServerAction(getCalendarItems);
   const { execute: loadTasks, loading: loadingTasks } = useServerAction(getTasks);
@@ -48,6 +64,8 @@ function CalendarItemsContent() {
   const { execute: handleCreateItem } = useServerAction(createCalendarItem);
   const { execute: handleUpdateItem } = useServerAction(updateCalendarItem);
   const { execute: handleDeleteItem } = useServerAction(deleteCalendarItem);
+  const { execute: handleSendNotification } = useServerAction(sendCalendarItemNotification);
+  const { execute: handleSendReminder } = useServerAction(sendCalendarItemReminder);
 
   const loading = loadingCalendar || loadingTasks || loadingBugs || loadingFeatures;
 
@@ -132,11 +150,24 @@ function CalendarItemsContent() {
       date: data.date || new Date(),
       notes: data.notes || '',
       status: data.status || 'planned',
+      time: data.time || '',
+      attendees: data.attendees || [],
+      reminderDays: data.reminderDays || [],
     };
     await handleCreateItem(projectId, newItem);
     const updated = await loadCalendarItems(projectId);
     if (updated) setCalendarItems(updated);
     setIsDrawerOpen(false);
+    setNewItemData({
+      title: 'New Calendar Item',
+      type: 'event',
+      date: new Date(),
+      notes: '',
+      status: 'planned',
+      time: '',
+      attendees: [],
+      reminderDays: [],
+    });
   };
 
   const handleUpdate = async (updates: Partial<CalendarItem>) => {
@@ -284,6 +315,16 @@ function CalendarItemsContent() {
         onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
         onNew={() => {
           setSelectedItem(null);
+          setNewItemData({
+            title: 'New Calendar Item',
+            type: 'event',
+            date: new Date(),
+            notes: '',
+            status: 'planned',
+            time: '',
+            attendees: [],
+            reminderDays: [],
+          });
           setIsDrawerOpen(true);
         }}
         viewType={viewType}
@@ -375,6 +416,16 @@ function CalendarItemsContent() {
             }}
             onQuickAdd={() => {
               setSelectedItem(null);
+              setNewItemData({
+                title: 'New Calendar Item',
+                type: 'event',
+                date: new Date(),
+                notes: '',
+                status: 'planned',
+                time: '',
+                attendees: [],
+                reminderDays: [],
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No calendar items found. Create your first item!"
@@ -388,49 +439,96 @@ function CalendarItemsContent() {
         onClose={() => {
           setIsDrawerOpen(false);
           setSelectedItem(null);
+          setNewItemData({
+            title: 'New Calendar Item',
+            type: 'event',
+            date: new Date(),
+            notes: '',
+            status: 'planned',
+            time: '',
+            attendees: [],
+            reminderDays: [],
+          });
         }}
-        title={selectedItem?.title || 'New Calendar Item'}
+        title={selectedItem?.title || newItemData.title || 'New Calendar Item'}
         onTitleChange={(title) => {
-          if (selectedItem) handleUpdate({ title });
+          if (selectedItem) {
+            handleUpdate({ title });
+          } else {
+            setNewItemData(prev => ({ ...prev, title }));
+          }
         }}
         properties={[
           {
             key: 'type',
             label: 'Type',
             type: 'select',
-            value: selectedItem?.type || 'event',
+            value: selectedItem?.type || newItemData.type || 'event',
             options: typeOptions,
             onChange: (value) => {
-              if (selectedItem) handleUpdate({ type: value as CalendarItem['type'] });
+              if (selectedItem) {
+                handleUpdate({ type: value as CalendarItem['type'] });
+              } else {
+                setNewItemData(prev => ({ ...prev, type: value as CalendarItem['type'] }));
+              }
             },
           },
           {
             key: 'status',
             label: 'Status',
             type: 'select',
-            value: selectedItem?.status || 'planned',
+            value: selectedItem?.status || newItemData.status || 'planned',
             options: statusOptions,
             onChange: (value) => {
-              if (selectedItem) handleUpdate({ status: value as CalendarItem['status'] });
+              if (selectedItem) {
+                handleUpdate({ status: value as CalendarItem['status'] });
+              } else {
+                setNewItemData(prev => ({ ...prev, status: value as CalendarItem['status'] }));
+              }
             },
           },
           {
             key: 'date',
             label: 'Date',
             type: 'date',
-            value: selectedItem?.date ? format(new Date(selectedItem.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+            value: selectedItem?.date 
+              ? format(new Date(selectedItem.date), 'yyyy-MM-dd') 
+              : newItemData.date 
+                ? format(new Date(newItemData.date), 'yyyy-MM-dd')
+                : format(new Date(), 'yyyy-MM-dd'),
             onChange: (value) => {
-              if (selectedItem) handleUpdate({ date: value ? new Date(value) : new Date() });
+              if (selectedItem) {
+                handleUpdate({ date: value ? new Date(value) : new Date() });
+              } else {
+                setNewItemData(prev => ({ ...prev, date: value ? new Date(value) : new Date() }));
+              }
             },
           },
         ]}
         bodyFields={[
           {
+            key: 'time',
+            label: 'Time (HH:mm)',
+            value: selectedItem?.time || newItemData.time || '',
+            onChange: (value) => {
+              if (selectedItem) {
+                handleUpdate({ time: value });
+              } else {
+                setNewItemData(prev => ({ ...prev, time: value }));
+              }
+            },
+            placeholder: 'e.g., 14:30 (optional)',
+          },
+          {
             key: 'notes',
             label: 'Notes',
-            value: selectedItem?.notes || '',
+            value: selectedItem?.notes || newItemData.notes || '',
             onChange: (value) => {
-              if (selectedItem) handleUpdate({ notes: value });
+              if (selectedItem) {
+                handleUpdate({ notes: value });
+              } else {
+                setNewItemData(prev => ({ ...prev, notes: value }));
+              }
             },
             placeholder: 'Additional notes...',
           },
@@ -443,11 +541,134 @@ function CalendarItemsContent() {
           if (selectedItem) {
             setIsDrawerOpen(false);
           } else {
-            handleCreate({ title: 'Untitled Event' });
+            handleCreate(newItemData);
           }
         }}
         onDelete={selectedItem ? handleDelete : undefined}
         accent={accent}
+        customContent={
+          <div className="space-y-4 mt-4">
+            {/* Attendees Section */}
+            {supportsAssignment(projectId) && (
+              <div className="border-t border-border-subtle pt-4">
+                <AttendeeSelector
+                  attendees={selectedItem?.attendees || newItemData.attendees || []}
+                  teamMembers={getTeamMembers(projectId)}
+                  onChange={(attendees) => {
+                    if (selectedItem) {
+                      handleUpdate({ attendees });
+                    } else {
+                      setNewItemData(prev => ({ ...prev, attendees }));
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Reminder Days Section */}
+            <div className="border-t border-border-subtle pt-4">
+              <label className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 block">
+                Reminder Days Before Event
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[1, 3, 7].map((days) => {
+                  const isSelected = (selectedItem?.reminderDays || newItemData.reminderDays || []).includes(days);
+                  return (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        const currentDays = selectedItem?.reminderDays || newItemData.reminderDays || [];
+                        const newDays = isSelected
+                          ? currentDays.filter(d => d !== days)
+                          : [...currentDays, days];
+                        if (selectedItem) {
+                          handleUpdate({ reminderDays: newDays });
+                        } else {
+                          setNewItemData(prev => ({ ...prev, reminderDays: newDays }));
+                        }
+                      }}
+                      className={cn(
+                        'px-3 py-1.5 text-xs rounded-md border transition-colors',
+                        isSelected
+                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                          : 'bg-background-card text-gray-400 border-border-subtle hover:border-gray-600'
+                      )}
+                    >
+                      {days} {days === 1 ? 'day' : 'days'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {selectedItem && supportsAssignment(projectId) && (
+              <div className="border-t border-border-subtle pt-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={async () => {
+                    if (!projectId || !selectedItem) return;
+                    const attendees = selectedItem.attendees || [];
+                    if (attendees.length === 0) {
+                      alert('Please add attendees before sending a notification.');
+                      return;
+                    }
+                    setSendingNotification(true);
+                    try {
+                      await handleSendNotification(projectId, selectedItem.id, attendees);
+                      alert('Calendar item notification sent successfully!');
+                    } catch (error) {
+                      console.error('Failed to send notification:', error);
+                      alert(`Failed to send notification: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    } finally {
+                      setSendingNotification(false);
+                    }
+                  }}
+                  disabled={sendingNotification || !selectedItem.attendees || selectedItem.attendees.length === 0}
+                  accent={accent}
+                  className="flex items-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  {sendingNotification ? 'Sending...' : 'Send Notification'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    if (!projectId || !selectedItem) return;
+                    const reminderDays = selectedItem.reminderDays || [];
+                    if (reminderDays.length === 0) {
+                      alert('Please select reminder days before sending a reminder.');
+                      return;
+                    }
+                    const daysUntil = Math.min(...reminderDays);
+                    setSendingReminder(true);
+                    try {
+                      await handleSendReminder(projectId, selectedItem.id, daysUntil);
+                      alert('Calendar item reminder sent successfully!');
+                      const updated = await loadCalendarItems(projectId);
+                      if (updated) setCalendarItems(updated);
+                    } catch (error) {
+                      console.error('Failed to send reminder:', error);
+                      alert(`Failed to send reminder: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    } finally {
+                      setSendingReminder(false);
+                    }
+                  }}
+                  disabled={sendingReminder || !selectedItem.reminderDays || selectedItem.reminderDays.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Clock className="w-4 h-4" />
+                  {sendingReminder ? 'Sending...' : 'Send Reminder'}
+                </Button>
+              </div>
+            )}
+          </div>
+        }
       />
     </div>
   );
