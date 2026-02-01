@@ -29,6 +29,16 @@ function TasksContent() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  const [newTaskData, setNewTaskData] = useState<Partial<Task>>({
+    title: 'New Task',
+    description: '',
+    status: 'todo',
+    priority: 'medium',
+    dueDate: undefined,
+    completionDate: undefined,
+    assignedTo: undefined,
+    notes: undefined,
+  });
 
   const { execute: loadTasks, loading } = useServerAction(getTasks);
   const { execute: handleCreateTask } = useServerAction(createTask);
@@ -72,21 +82,55 @@ function TasksContent() {
 
   const handleCreate = async (data: Partial<Task>) => {
     if (!projectId) return;
+    console.log('[Task Create] Creating new task:', {
+      projectId,
+      data,
+      hasAssignee: !!data.assignedTo,
+      assignee: data.assignedTo,
+    });
+    
     const newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> = {
       title: data.title || 'Untitled Task',
       description: data.description || '',
       priority: data.priority || 'medium',
       status: data.status || 'todo',
       order: tasks.length,
+      dueDate: data.dueDate,
+      completionDate: data.completionDate,
+      assignedTo: data.assignedTo,
+      notes: data.notes,
+      tags: data.tags,
     };
-    await handleCreateTask(projectId, newTask);
-    const updated = await loadTasks(projectId);
-    if (updated) setTasks(updated);
-    setIsDrawerOpen(false);
+    
+    try {
+      const taskId = await handleCreateTask(projectId, newTask);
+      console.log('[Task Create] Task created successfully:', taskId);
+      
+      const updated = await loadTasks(projectId);
+      if (updated) setTasks(updated);
+      setIsDrawerOpen(false);
+      setNewTaskData({
+        title: 'New Task',
+        description: '',
+        status: 'todo',
+        priority: 'medium',
+        dueDate: undefined,
+        completionDate: undefined,
+        assignedTo: undefined,
+        notes: undefined,
+      });
+    } catch (error) {
+      console.error('[Task Create] Failed to create task:', error);
+      throw error;
+    }
   };
 
   const handleUpdate = async (updates: Partial<Task>) => {
     if (!projectId || !selectedTask) return;
+    console.log('[Task Update] Updating task:', {
+      taskId: selectedTask.id,
+      updates,
+    });
     await handleUpdateTask(projectId, selectedTask.id, updates);
     const updated = await loadTasks(projectId);
     if (updated) setTasks(updated);
@@ -376,6 +420,16 @@ function TasksContent() {
         onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
         onNew={() => {
           setSelectedTask(null);
+          setNewTaskData({
+            title: 'New Task',
+            description: '',
+            status: 'todo',
+            priority: 'medium',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+            notes: undefined,
+          });
           setIsDrawerOpen(true);
         }}
         viewType={viewType}
@@ -402,6 +456,16 @@ function TasksContent() {
             }}
             onQuickAdd={() => {
               setSelectedTask(null);
+              setNewTaskData({
+                title: 'New Task',
+                description: '',
+                status: 'todo',
+                priority: 'medium',
+                dueDate: undefined,
+                completionDate: undefined,
+                assignedTo: undefined,
+                notes: undefined,
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No tasks found. Create your first task!"
@@ -429,7 +493,17 @@ function TasksContent() {
             }}
             onCardMove={handleCardMove}
             onAddCard={(status) => {
-              setSelectedTask({ ...selectedTask, status: status as Task['status'] } as Task);
+              setSelectedTask(null);
+              setNewTaskData({
+                title: 'New Task',
+                description: '',
+                status: status as Task['status'],
+                priority: 'medium',
+                dueDate: undefined,
+                completionDate: undefined,
+                assignedTo: undefined,
+                notes: undefined,
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No tasks found. Create your first task!"
@@ -462,11 +536,23 @@ function TasksContent() {
         onClose={() => {
           setIsDrawerOpen(false);
           setSelectedTask(null);
+          setNewTaskData({
+            title: 'New Task',
+            description: '',
+            status: 'todo',
+            priority: 'medium',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+            notes: undefined,
+          });
         }}
-        title={selectedTask?.title || 'New Task'}
+        title={selectedTask?.title || newTaskData.title || 'New Task'}
         onTitleChange={(title) => {
           if (selectedTask) {
             handleUpdate({ title });
+          } else {
+            setNewTaskData(prev => ({ ...prev, title }));
           }
         }}
         properties={[
@@ -474,11 +560,13 @@ function TasksContent() {
             key: 'status',
             label: 'Status',
             type: 'select',
-            value: selectedTask?.status || 'todo',
+            value: selectedTask?.status || newTaskData.status || 'todo',
             options: statusOptions,
             onChange: (value) => {
               if (selectedTask) {
                 handleUpdate({ status: value as Task['status'] });
+              } else {
+                setNewTaskData(prev => ({ ...prev, status: value as Task['status'] }));
               }
             },
           },
@@ -486,11 +574,13 @@ function TasksContent() {
             key: 'priority',
             label: 'Priority',
             type: 'select',
-            value: selectedTask?.priority || 'medium',
+            value: selectedTask?.priority || newTaskData.priority || 'medium',
             options: priorityOptions,
             onChange: (value) => {
               if (selectedTask) {
                 handleUpdate({ priority: value as Task['priority'] });
+              } else {
+                setNewTaskData(prev => ({ ...prev, priority: value as Task['priority'] }));
               }
             },
           },
@@ -498,10 +588,12 @@ function TasksContent() {
             key: 'dueDate',
             label: 'Due Date',
             type: 'date',
-            value: selectedTask?.dueDate,
+            value: selectedTask?.dueDate || newTaskData.dueDate,
             onChange: (value) => {
               if (selectedTask) {
                 handleUpdate({ dueDate: value });
+              } else {
+                setNewTaskData(prev => ({ ...prev, dueDate: value }));
               }
             },
           },
@@ -509,10 +601,12 @@ function TasksContent() {
             key: 'completionDate',
             label: 'Completion Date',
             type: 'date',
-            value: selectedTask?.completionDate,
+            value: selectedTask?.completionDate || newTaskData.completionDate,
             onChange: (value) => {
               if (selectedTask) {
                 handleUpdate({ completionDate: value });
+              } else {
+                setNewTaskData(prev => ({ ...prev, completionDate: value }));
               }
             },
           },
@@ -521,10 +615,12 @@ function TasksContent() {
           {
             key: 'description',
             label: 'Description',
-            value: selectedTask?.description || '',
+            value: selectedTask?.description || newTaskData.description || '',
             onChange: (value) => {
               if (selectedTask) {
                 handleUpdate({ description: value });
+              } else {
+                setNewTaskData(prev => ({ ...prev, description: value }));
               }
             },
             placeholder: 'Describe the task...',
@@ -532,10 +628,12 @@ function TasksContent() {
           {
             key: 'notes',
             label: 'Notes',
-            value: selectedTask?.notes || '',
+            value: selectedTask?.notes || newTaskData.notes || '',
             onChange: (value: string) => {
               if (selectedTask) {
                 handleUpdate({ notes: value });
+              } else {
+                setNewTaskData(prev => ({ ...prev, notes: value }));
               }
             },
             placeholder: 'Add notes about this task...',
@@ -550,15 +648,17 @@ function TasksContent() {
           if (selectedTask) {
             setIsDrawerOpen(false);
           } else {
-            handleCreate({ title: 'Untitled Task' });
+            handleCreate(newTaskData);
           }
         }}
         onDelete={selectedTask ? handleDelete : undefined}
-        assignedTo={selectedTask?.assignedTo || null}
+        assignedTo={selectedTask?.assignedTo || newTaskData.assignedTo || null}
         teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedTask) {
             handleUpdate({ assignedTo: email || undefined });
+          } else {
+            setNewTaskData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
         showAssignment={supportsAssignment(projectId)}

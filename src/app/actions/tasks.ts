@@ -54,12 +54,80 @@ export async function createTask(
 ): Promise<string> {
   const user = await requireAuth(token);
   
+  // Only send emails for prepcenter-uae
+  const project = getProject(projectId);
+  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  
   const taskData = {
     ...data,
     createdBy: user.email || 'unknown',
   };
   
-  return createDocument<Task>(projectId, 'tasks', taskData);
+  const taskId = await createDocument<Task>(projectId, 'tasks', taskData);
+  
+  // Send email if task is created with an assignee
+  if (shouldSendEmails && taskData.assignedTo && taskData.assignedTo.trim() && taskData.assignedTo.includes('@')) {
+    try {
+      console.log(`[Task Email] Sending assignment email for new task ${taskId}:`, {
+        assignedTo: taskData.assignedTo,
+        title: taskData.title,
+      });
+      
+      const statusLabels: Record<string, string> = {
+        todo: 'Todo',
+        in_progress: 'In Progress',
+        blocked: 'Blocked',
+        completed: 'Completed',
+      };
+      
+      const priorityLabels: Record<string, string> = {
+        high: 'High',
+        medium: 'Medium',
+        low: 'Low',
+      };
+      
+      // Build email body
+      let emailBody = `Hello,\n\n`;
+      emailBody += `You have been assigned to a new task.\n\n`;
+      emailBody += `Task: ${taskData.title || 'Untitled Task'}\n`;
+      emailBody += `Description: ${taskData.description || 'No description'}\n\n`;
+      emailBody += `Status: ${statusLabels[taskData.status || 'todo']}\n`;
+      emailBody += `Priority: ${priorityLabels[taskData.priority || 'medium']}\n`;
+      
+      if (taskData.dueDate) {
+        emailBody += `Due date: ${format(new Date(taskData.dueDate), 'MMM d, yyyy')}\n`;
+      }
+      
+      emailBody += `\n---\n`;
+      emailBody += `View this task in the admin panel for more details.\n`;
+      
+      const subject = `You've been assigned to: ${taskData.title || 'Task'}`;
+      
+      await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, taskData.assignedTo, token);
+      console.log(`[Task Email] Email sent successfully to ${taskData.assignedTo}`);
+    } catch (error) {
+      // Log error but don't fail the creation
+      console.error('[Task Email] Failed to send assignment email for new task:', error);
+      console.error('[Task Email] Error details:', {
+        taskId,
+        assignedTo: taskData.assignedTo,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+      // Re-throw in development to help debug
+      if (process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+    }
+  } else if (shouldSendEmails && taskData.assignedTo) {
+    console.warn('[Task Email] Task created with assignee but email not sent:', {
+      taskId,
+      assignedTo: taskData.assignedTo,
+      reason: !taskData.assignedTo.trim() ? 'Empty assignee' : !taskData.assignedTo.includes('@') ? 'Invalid email format' : 'Unknown',
+    });
+  }
+  
+  return taskId;
 }
 
 export async function updateTask(
@@ -80,10 +148,14 @@ export async function updateTask(
     
     // Detect key changes
     const changes: string[] = [];
-    const newAssignedTo = data.assignedTo !== undefined ? data.assignedTo : previousData?.assignedTo;
-    const oldAssignedTo = previousData?.assignedTo;
+    const newAssignedTo = data.assignedTo !== undefined ? (data.assignedTo || null) : (previousData?.assignedTo || null);
+    const oldAssignedTo = previousData?.assignedTo || null;
     
-    if (data.assignedTo !== undefined && data.assignedTo !== oldAssignedTo) {
+    // Normalize to handle empty strings vs null vs undefined
+    const normalizedNewAssignedTo = newAssignedTo && newAssignedTo.trim() ? newAssignedTo.trim() : null;
+    const normalizedOldAssignedTo = oldAssignedTo && oldAssignedTo.trim() ? oldAssignedTo.trim() : null;
+    
+    if (data.assignedTo !== undefined && normalizedNewAssignedTo !== normalizedOldAssignedTo) {
       changes.push('assignment');
     }
     if (data.status !== undefined && data.status !== previousData?.status) {
@@ -100,69 +172,200 @@ export async function updateTask(
       }
     }
     
-    // Send email if there are changes and there's an assignee
-    if (changes.length > 0 && newAssignedTo) {
-      try {
-        const statusLabels: Record<string, string> = {
-          todo: 'Todo',
-          in_progress: 'In Progress',
-          blocked: 'Blocked',
-          completed: 'Completed',
-        };
-        
-        const priorityLabels: Record<string, string> = {
-          high: 'High',
-          medium: 'Medium',
-          low: 'Low',
-        };
-        
-        // Build email body
-        let emailBody = `Hello,\n\n`;
+    // Send email if there are changes
+    // Handle different scenarios:
+    // 1. Unassignment - send to old assignee
+    // 2. Assignment/reassignment - send to new assignee
+    // 3. Status to completed - send to creator
+    // 4. Other changes - send to current assignee
+    if (changes.length > 0) {
+      const statusLabels: Record<string, string> = {
+        todo: 'Todo',
+        in_progress: 'In Progress',
+        blocked: 'Blocked',
+        completed: 'Completed',
+      };
+      
+      const priorityLabels: Record<string, string> = {
+        high: 'High',
+        medium: 'Medium',
+        low: 'Low',
+      };
+      
+      // Helper function to get creator email
+      const getCreatorEmail = (): string | null => {
+        // Check if task has email in createdBy
+        if (previousData?.createdBy && previousData.createdBy.includes('@')) {
+          return previousData.createdBy;
+        }
+        return null;
+      };
+      
+      // Scenario 1: Unassignment - send to old assignee
+      if (changes.includes('assignment') && normalizedOldAssignedTo && !normalizedNewAssignedTo) {
+        try {
+          console.log(`[Task Email] Sending unassignment email for task ${taskId}:`, {
+            oldAssignee: normalizedOldAssignedTo,
+          });
+          
+          let emailBody = `Hello,\n\n`;
+          emailBody += `You have been unassigned from this task.\n\n`;
+          emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
+          emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+          emailBody += `Status: ${statusLabels[previousData?.status || 'todo']}\n`;
+          emailBody += `Priority: ${priorityLabels[previousData?.priority || 'medium']}\n`;
+          emailBody += `\n---\n`;
+          emailBody += `You are no longer responsible for this task.\n`;
+          
+          const subject = `Unassigned from: ${previousData?.title || 'Task'}`;
+          
+          await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, normalizedOldAssignedTo, token);
+          console.log(`[Task Email] Unassignment email sent successfully to ${normalizedOldAssignedTo}`);
+        } catch (error) {
+          console.error('[Task Email] Failed to send unassignment email:', error);
+          if (process.env.NODE_ENV === 'development') {
+            throw error;
+          }
+        }
+      }
+      
+      // Scenario 2: Status changed to completed - send to creator
+      if (changes.includes('status') && data.status === 'completed') {
+        try {
+          const creatorEmail = getCreatorEmail();
+          
+          if (creatorEmail && creatorEmail.includes('@')) {
+            console.log(`[Task Email] Sending completion email for task ${taskId}:`, {
+              status: data.status,
+              creatorEmail,
+            });
+            
+            let emailBody = `Hello,\n\n`;
+            emailBody += `Great news! The task you created has been completed.\n\n`;
+            emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
+            emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+            emailBody += `Status: ${statusLabels[data.status as string]}\n`;
+            emailBody += `Priority: ${priorityLabels[previousData?.priority || 'medium']}\n`;
+            
+            // Use updated completion date if provided, otherwise use previous
+            const completionDate = data.completionDate || previousData?.completionDate;
+            if (completionDate) {
+              emailBody += `Completed: ${format(new Date(completionDate), 'MMM d, yyyy')}\n`;
+            }
+            
+            emailBody += `\n---\n`;
+            emailBody += `Thank you for creating this task. If you have any questions or concerns, please reply to this email.\n`;
+            
+            const subject = `Task Completed: ${previousData?.title || 'Task'}`;
+            
+            await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, creatorEmail, token);
+            console.log(`[Task Email] Completion email sent successfully to ${creatorEmail}`);
+          } else {
+            console.log('[Task Email] Status changed to completed but no creator email found:', {
+              taskId,
+              creatorEmail,
+            });
+          }
+        } catch (error) {
+          console.error('[Task Email] Failed to send completion email:', error);
+          if (process.env.NODE_ENV === 'development') {
+            throw error;
+          }
+        }
+      }
+      
+      // Scenario 3: Assignment/reassignment or other changes - send to assignee
+      // Only send if there's a current assignee and it's not an unassignment (already handled above)
+      if (!(changes.includes('assignment') && normalizedOldAssignedTo && !normalizedNewAssignedTo)) {
+        let emailRecipient: string | null = null;
         
         if (changes.includes('assignment')) {
-          if (oldAssignedTo) {
-            emailBody += `You have been reassigned to this task.\n\n`;
-          } else {
-            emailBody += `You have been assigned to this task.\n\n`;
-          }
-        }
-        
-        emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
-        emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
-        
-        if (changes.includes('status')) {
-          emailBody += `Status changed to: ${statusLabels[data.status as string] || data.status}\n`;
+          // If assignment changed, send to the new assignee
+          emailRecipient = normalizedNewAssignedTo;
         } else {
-          emailBody += `Status: ${statusLabels[previousData?.status || 'todo']}\n`;
+          // For other changes, send to the current assignee
+          emailRecipient = normalizedNewAssignedTo;
         }
         
-        if (changes.includes('priority')) {
-          emailBody += `Priority changed to: ${priorityLabels[data.priority as string] || data.priority}\n`;
-        } else {
-          emailBody += `Priority: ${priorityLabels[previousData?.priority || 'medium']}\n`;
-        }
-        
-        if (changes.includes('dueDate')) {
-          if (data.dueDate) {
-            emailBody += `Due date changed to: ${format(new Date(data.dueDate), 'MMM d, yyyy')}\n`;
-          } else {
-            emailBody += `Due date removed\n`;
+        // Only send email if there's a recipient
+        if (emailRecipient && emailRecipient.includes('@')) {
+          console.log(`[Task Email] Sending email for task ${taskId}:`, {
+            changes,
+            emailRecipient,
+            normalizedNewAssignedTo,
+            normalizedOldAssignedTo,
+          });
+          try {
+            // Build email body
+            let emailBody = `Hello,\n\n`;
+            
+            if (changes.includes('assignment')) {
+              if (normalizedOldAssignedTo) {
+                emailBody += `You have been reassigned to this task.\n\n`;
+              } else {
+                emailBody += `You have been assigned to this task.\n\n`;
+              }
+            }
+            
+            emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
+            emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+            
+            if (changes.includes('status')) {
+              emailBody += `Status changed to: ${statusLabels[data.status as string] || data.status}\n`;
+            } else {
+              emailBody += `Status: ${statusLabels[previousData?.status || 'todo']}\n`;
+            }
+            
+            if (changes.includes('priority')) {
+              emailBody += `Priority changed to: ${priorityLabels[data.priority as string] || data.priority}\n`;
+            } else {
+              emailBody += `Priority: ${priorityLabels[previousData?.priority || 'medium']}\n`;
+            }
+            
+            if (changes.includes('dueDate')) {
+              if (data.dueDate) {
+                emailBody += `Due date changed to: ${format(new Date(data.dueDate), 'MMM d, yyyy')}\n`;
+              } else {
+                emailBody += `Due date removed\n`;
+              }
+            } else if (previousData?.dueDate) {
+              emailBody += `Due date: ${format(new Date(previousData.dueDate), 'MMM d, yyyy')}\n`;
+            }
+            
+            emailBody += `\n---\n`;
+            emailBody += `View this task in the admin panel for more details.\n`;
+            
+            const subject = changes.includes('assignment') && !normalizedOldAssignedTo
+              ? `You've been assigned to: ${previousData?.title || 'Task'}`
+              : `Update: ${previousData?.title || 'Task'}`;
+            
+            await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, emailRecipient, token);
+            console.log(`[Task Email] Email sent successfully to ${emailRecipient}`);
+          } catch (error) {
+            // Log error but don't fail the update
+            console.error('[Task Email] Failed to send task update email:', error);
+            console.error('[Task Email] Error details:', {
+              taskId,
+              emailRecipient,
+              errorMessage: error instanceof Error ? error.message : String(error),
+              errorStack: error instanceof Error ? error.stack : undefined,
+            });
+            // Re-throw in development to help debug
+            if (process.env.NODE_ENV === 'development') {
+              throw error;
+            }
           }
-        } else if (previousData?.dueDate) {
-          emailBody += `Due date: ${format(new Date(previousData.dueDate), 'MMM d, yyyy')}\n`;
+        } else if (changes.includes('assignment')) {
+          // Log warning if assignment changed but no recipient
+          console.warn('[Task Email] Assignment change detected but no assignee email found:', {
+            taskId,
+            changes,
+            normalizedNewAssignedTo,
+            normalizedOldAssignedTo,
+            dataAssignedTo: data.assignedTo,
+            previousDataAssignedTo: previousData?.assignedTo,
+          });
         }
-        
-        emailBody += `\n---\n`;
-        emailBody += `View this task in the admin panel for more details.\n`;
-        
-        const subject = changes.includes('assignment') && !oldAssignedTo
-          ? `You've been assigned to: ${previousData?.title || 'Task'}`
-          : `Update: ${previousData?.title || 'Task'}`;
-        
-        await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, newAssignedTo, token);
-      } catch (error) {
-        // Log error but don't fail the update
-        console.error('Failed to send task update email:', error);
       }
     }
   }
@@ -172,7 +375,54 @@ export async function updateTask(
 
 export async function deleteTask(projectId: ProjectId, taskId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
-  return deleteDocument(projectId, 'tasks', taskId);
+  
+  // Only send emails for prepcenter-uae
+  const project = getProject(projectId);
+  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  
+  // Get task data before deleting (for email notification)
+  let taskData: Task | null = null;
+  if (shouldSendEmails) {
+    taskData = await getDocumentData<Task>(projectId, 'tasks', taskId);
+  }
+  
+  // Delete the task
+  await deleteDocument(projectId, 'tasks', taskId);
+  
+  // Send email notification if task had an assignee
+  if (shouldSendEmails && taskData && taskData.assignedTo && taskData.assignedTo.trim() && taskData.assignedTo.includes('@')) {
+    try {
+      console.log(`[Task Email] Sending deletion email for task ${taskId}:`, {
+        assignedTo: taskData.assignedTo,
+        title: taskData.title,
+      });
+      
+      const emailBody = `Hello,\n\n` +
+        `The task you were assigned to has been deleted.\n\n` +
+        `Task: ${taskData.title || 'Untitled Task'}\n` +
+        `Description: ${taskData.description || 'No description'}\n\n` +
+        `---\n` +
+        `This task has been removed from the system. If you have any questions, please contact the team.\n`;
+      
+      const subject = `Task Deleted: ${taskData.title || 'Task'}`;
+      
+      await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, taskData.assignedTo, token);
+      console.log(`[Task Email] Deletion email sent successfully to ${taskData.assignedTo}`);
+    } catch (error) {
+      // Log error but don't fail the deletion
+      console.error('[Task Email] Failed to send deletion email:', error);
+      console.error('[Task Email] Error details:', {
+        taskId,
+        assignedTo: taskData.assignedTo,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+      // Re-throw in development to help debug
+      if (process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+    }
+  }
 }
 
 export async function getTasksByStatus(

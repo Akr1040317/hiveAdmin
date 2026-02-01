@@ -28,6 +28,16 @@ function FeaturesContent() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  const [newFeatureData, setNewFeatureData] = useState<Partial<Feature>>({
+    title: 'New Feature',
+    description: '',
+    status: 'idea',
+    priority: 'medium',
+    area: 'learner',
+    dueDate: undefined,
+    completionDate: undefined,
+    assignedTo: undefined,
+  });
 
   const { execute: loadFeatures, loading } = useServerAction(getFeatures);
   const { execute: handleCreateFeature } = useServerAction(createFeature);
@@ -60,6 +70,13 @@ function FeaturesContent() {
 
   const handleCreate = async (data: Partial<Feature>) => {
     if (!projectId) return;
+    console.log('[Feature Create] Creating new feature:', {
+      projectId,
+      data,
+      hasAssignee: !!data.assignedTo,
+      assignee: data.assignedTo,
+    });
+    
     const newFeature: Omit<Feature, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> = {
       title: data.title || 'Untitled Feature',
       description: data.description || '',
@@ -67,15 +84,40 @@ function FeaturesContent() {
       priority: data.priority || 'medium',
       status: data.status || 'idea',
       order: features.length,
+      dueDate: data.dueDate,
+      completionDate: data.completionDate,
+      assignedTo: data.assignedTo,
     };
-    await handleCreateFeature(projectId, newFeature);
-    const updated = await loadFeatures(projectId);
-    if (updated) setFeatures(updated);
-    setIsDrawerOpen(false);
+    
+    try {
+      const featureId = await handleCreateFeature(projectId, newFeature);
+      console.log('[Feature Create] Feature created successfully:', featureId);
+      
+      const updated = await loadFeatures(projectId);
+      if (updated) setFeatures(updated);
+      setIsDrawerOpen(false);
+      setNewFeatureData({
+        title: 'New Feature',
+        description: '',
+        status: 'idea',
+        priority: 'medium',
+        area: 'learner',
+        dueDate: undefined,
+        completionDate: undefined,
+        assignedTo: undefined,
+      });
+    } catch (error) {
+      console.error('[Feature Create] Failed to create feature:', error);
+      throw error;
+    }
   };
 
   const handleUpdate = async (updates: Partial<Feature>) => {
     if (!projectId || !selectedFeature) return;
+    console.log('[Feature Update] Updating feature:', {
+      featureId: selectedFeature.id,
+      updates,
+    });
     await handleUpdateFeature(projectId, selectedFeature.id, updates);
     const updated = await loadFeatures(projectId);
     if (updated) setFeatures(updated);
@@ -237,6 +279,16 @@ function FeaturesContent() {
         onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
         onNew={() => {
           setSelectedFeature(null);
+          setNewFeatureData({
+            title: 'New Feature',
+            description: '',
+            status: 'idea',
+            priority: 'medium',
+            area: 'learner',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+          });
           setIsDrawerOpen(true);
         }}
         viewType={viewType}
@@ -262,6 +314,16 @@ function FeaturesContent() {
             }}
             onQuickAdd={() => {
               setSelectedFeature(null);
+              setNewFeatureData({
+                title: 'New Feature',
+                description: '',
+                status: 'idea',
+                priority: 'medium',
+                area: 'learner',
+                dueDate: undefined,
+                completionDate: undefined,
+                assignedTo: undefined,
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No features found. Create your first feature!"
@@ -293,7 +355,17 @@ function FeaturesContent() {
             }}
             onCardMove={handleCardMove}
             onAddCard={(status) => {
-              setSelectedFeature({ ...selectedFeature, status: status as Feature['status'] } as Feature);
+              setSelectedFeature(null);
+              setNewFeatureData({
+                title: 'New Feature',
+                description: '',
+                status: status as Feature['status'],
+                priority: 'medium',
+                area: 'learner',
+                dueDate: undefined,
+                completionDate: undefined,
+                assignedTo: undefined,
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No features found. Create your first feature!"
@@ -325,50 +397,78 @@ function FeaturesContent() {
         onClose={() => {
           setIsDrawerOpen(false);
           setSelectedFeature(null);
+          setNewFeatureData({
+            title: 'New Feature',
+            description: '',
+            status: 'idea',
+            priority: 'medium',
+            area: 'learner',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+          });
         }}
-        title={selectedFeature?.title || 'New Feature'}
+        title={selectedFeature?.title || newFeatureData.title || 'New Feature'}
         onTitleChange={(title) => {
-          if (selectedFeature) handleUpdate({ title });
+          if (selectedFeature) {
+            handleUpdate({ title });
+          } else {
+            setNewFeatureData(prev => ({ ...prev, title }));
+          }
         }}
         properties={[
           {
             key: 'status',
             label: 'Status',
             type: 'select',
-            value: selectedFeature?.status || 'idea',
+            value: selectedFeature?.status || newFeatureData.status || 'idea',
             options: statusOptions,
             onChange: (value) => {
-              if (selectedFeature) handleUpdate({ status: value as Feature['status'] });
+              if (selectedFeature) {
+                handleUpdate({ status: value as Feature['status'] });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, status: value as Feature['status'] }));
+              }
             },
           },
           {
             key: 'priority',
             label: 'Priority',
             type: 'select',
-            value: selectedFeature?.priority || 'medium',
+            value: selectedFeature?.priority || newFeatureData.priority || 'medium',
             options: priorityOptions,
             onChange: (value) => {
-              if (selectedFeature) handleUpdate({ priority: value as Feature['priority'] });
+              if (selectedFeature) {
+                handleUpdate({ priority: value as Feature['priority'] });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, priority: value as Feature['priority'] }));
+              }
             },
           },
           {
             key: 'area',
             label: 'Feature Area',
             type: 'select',
-            value: selectedFeature?.area || 'learner',
+            value: selectedFeature?.area || newFeatureData.area || 'learner',
             options: areaOptions,
             onChange: (value) => {
-              if (selectedFeature) handleUpdate({ area: value as Feature['area'] });
+              if (selectedFeature) {
+                handleUpdate({ area: value as Feature['area'] });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, area: value as Feature['area'] }));
+              }
             },
           },
           {
             key: 'dueDate',
             label: 'Due Date',
             type: 'date',
-            value: selectedFeature?.dueDate,
+            value: selectedFeature?.dueDate || newFeatureData.dueDate,
             onChange: (value) => {
               if (selectedFeature) {
                 handleUpdate({ dueDate: value });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, dueDate: value }));
               }
             },
           },
@@ -376,10 +476,12 @@ function FeaturesContent() {
             key: 'completionDate',
             label: 'Completion Date',
             type: 'date',
-            value: selectedFeature?.completionDate,
+            value: selectedFeature?.completionDate || newFeatureData.completionDate,
             onChange: (value) => {
               if (selectedFeature) {
                 handleUpdate({ completionDate: value });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, completionDate: value }));
               }
             },
           },
@@ -388,9 +490,13 @@ function FeaturesContent() {
           {
             key: 'description',
             label: 'Description',
-            value: selectedFeature?.description || '',
+            value: selectedFeature?.description || newFeatureData.description || '',
             onChange: (value) => {
-              if (selectedFeature) handleUpdate({ description: value });
+              if (selectedFeature) {
+                handleUpdate({ description: value });
+              } else {
+                setNewFeatureData(prev => ({ ...prev, description: value }));
+              }
             },
             placeholder: 'Describe the feature...',
           },
@@ -404,15 +510,17 @@ function FeaturesContent() {
           if (selectedFeature) {
             setIsDrawerOpen(false);
           } else {
-            handleCreate({ title: 'Untitled Feature' });
+            handleCreate(newFeatureData);
           }
         }}
         onDelete={selectedFeature ? handleDelete : undefined}
-        assignedTo={selectedFeature?.assignedTo || null}
+        assignedTo={selectedFeature?.assignedTo || newFeatureData.assignedTo || null}
         teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedFeature) {
             handleUpdate({ assignedTo: email || undefined });
+          } else {
+            setNewFeatureData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
         showAssignment={supportsAssignment(projectId)}
