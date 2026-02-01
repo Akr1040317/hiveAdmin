@@ -101,7 +101,7 @@ export async function getCalendarItemsByStatus(
 
 /**
  * Send calendar item notification email
- * Only works for prepcenter-uae project
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
  */
 export async function sendCalendarItemNotification(
   projectId: ProjectId,
@@ -111,12 +111,12 @@ export async function sendCalendarItemNotification(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   if (!shouldSendEmails) {
-    console.log('[Calendar Email] Skipping notification - not prepcenter-uae project');
+    console.log('[Calendar Email] Skipping notification - not prepcenter project');
     return;
   }
   
@@ -220,7 +220,7 @@ export async function sendCalendarItemNotification(
 
 /**
  * Send calendar item reminder email
- * Only works for prepcenter-uae project
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
  */
 export async function sendCalendarItemReminder(
   projectId: ProjectId,
@@ -230,12 +230,12 @@ export async function sendCalendarItemReminder(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   if (!shouldSendEmails) {
-    console.log('[Calendar Email] Skipping reminder - not prepcenter-uae project');
+    console.log('[Calendar Email] Skipping reminder - not prepcenter project');
     return;
   }
   

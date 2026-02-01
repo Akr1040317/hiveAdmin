@@ -1,4 +1,4 @@
-import { getAdminFirestore } from './server-config';
+import { getAdminFirestore, getAdminApp } from './server-config';
 import { getProject, ProjectId } from '@/lib/projects';
 import { 
   CollectionReference, 
@@ -6,6 +6,7 @@ import {
   Query,
   QueryDocumentSnapshot,
   DocumentData,
+  getFirestore,
 } from 'firebase-admin/firestore';
 
 /**
@@ -15,6 +16,12 @@ export async function getProjectFirestore(projectId: ProjectId) {
   const project = getProject(projectId);
   if (!project) {
     throw new Error(`Project ${projectId} not found`);
+  }
+  
+  // prepcenter-oman uses the named 'oman' database in the same Firebase project
+  if (projectId === 'prepcenter-oman') {
+    const app = getAdminApp('prepcenter');
+    return getFirestore(app, 'oman');
   }
   
   return getAdminFirestore(project.firebaseProjectType);

@@ -54,9 +54,9 @@ export async function createTask(
 ): Promise<string> {
   const user = await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   const taskData = {
     ...data,
@@ -140,9 +140,9 @@ export async function updateTask(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   if (shouldSendEmails) {
     // Get previous data to detect changes
@@ -384,9 +384,9 @@ export async function updateTask(
 export async function deleteTask(projectId: ProjectId, taskId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   // Get task data before deleting (for email notification)
   let taskData: Task | null = null;

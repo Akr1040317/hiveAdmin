@@ -94,7 +94,7 @@ export async function getMeetingsByType(
 
 /**
  * Send meeting invitation email with .ics calendar file attachment
- * Only works for prepcenter-uae project
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
  */
 export async function sendMeetingInvite(
   projectId: ProjectId,
@@ -104,12 +104,12 @@ export async function sendMeetingInvite(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   if (!shouldSendEmails) {
-    console.log('[Meeting Email] Skipping email - not prepcenter-uae project');
+    console.log('[Meeting Email] Skipping email - not prepcenter project');
     return;
   }
   
@@ -233,7 +233,7 @@ export async function sendMeetingInvite(
 
 /**
  * Send meeting reminder email
- * Only works for prepcenter-uae project
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
  */
 export async function sendMeetingReminder(
   projectId: ProjectId,
@@ -243,12 +243,12 @@ export async function sendMeetingReminder(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter-uae
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
   
   if (!shouldSendEmails) {
-    console.log('[Meeting Email] Skipping reminder - not prepcenter-uae project');
+    console.log('[Meeting Email] Skipping reminder - not prepcenter project');
     return;
   }
   
