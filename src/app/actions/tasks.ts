@@ -87,7 +87,9 @@ export async function createTask(
       };
       
       // Build email body
+      const projectName = project?.displayName || projectId;
       let emailBody = `Hello,\n\n`;
+      emailBody += `Project: ${projectName}\n\n`;
       emailBody += `You have been assigned to a new task.\n\n`;
       emailBody += `Task: ${taskData.title || 'Untitled Task'}\n`;
       emailBody += `Description: ${taskData.description || 'No description'}\n\n`;
@@ -101,7 +103,7 @@ export async function createTask(
       emailBody += `\n---\n`;
       emailBody += `View this task in the admin panel for more details.\n`;
       
-      const subject = `You've been assigned to: ${taskData.title || 'Task'}`;
+      const subject = `[${projectName}] You've been assigned to: ${taskData.title || 'Task'}`;
       
       await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, taskData.assignedTo, token);
       console.log(`[Task Email] Email sent successfully to ${taskData.assignedTo}`);
@@ -208,7 +210,9 @@ export async function updateTask(
             oldAssignee: normalizedOldAssignedTo,
           });
           
+          const projectName = project?.displayName || projectId;
           let emailBody = `Hello,\n\n`;
+          emailBody += `Project: ${projectName}\n\n`;
           emailBody += `You have been unassigned from this task.\n\n`;
           emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
           emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -217,7 +221,7 @@ export async function updateTask(
           emailBody += `\n---\n`;
           emailBody += `You are no longer responsible for this task.\n`;
           
-          const subject = `Unassigned from: ${previousData?.title || 'Task'}`;
+          const subject = `[${projectName}] Unassigned from: ${previousData?.title || 'Task'}`;
           
           await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, normalizedOldAssignedTo, token);
           console.log(`[Task Email] Unassignment email sent successfully to ${normalizedOldAssignedTo}`);
@@ -240,7 +244,9 @@ export async function updateTask(
               creatorEmail,
             });
             
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             emailBody += `Great news! The task you created has been completed.\n\n`;
             emailBody += `Task: ${previousData?.title || 'Untitled Task'}\n`;
             emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -256,7 +262,7 @@ export async function updateTask(
             emailBody += `\n---\n`;
             emailBody += `Thank you for creating this task. If you have any questions or concerns, please reply to this email.\n`;
             
-            const subject = `Task Completed: ${previousData?.title || 'Task'}`;
+            const subject = `[${projectName}] Task Completed: ${previousData?.title || 'Task'}`;
             
             await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, creatorEmail, token);
             console.log(`[Task Email] Completion email sent successfully to ${creatorEmail}`);
@@ -297,7 +303,9 @@ export async function updateTask(
           });
           try {
             // Build email body
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             
             if (changes.includes('assignment')) {
               if (normalizedOldAssignedTo) {
@@ -336,8 +344,8 @@ export async function updateTask(
             emailBody += `View this task in the admin panel for more details.\n`;
             
             const subject = changes.includes('assignment') && !normalizedOldAssignedTo
-              ? `You've been assigned to: ${previousData?.title || 'Task'}`
-              : `Update: ${previousData?.title || 'Task'}`;
+              ? `[${projectName}] You've been assigned to: ${previousData?.title || 'Task'}`
+              : `[${projectName}] Update: ${previousData?.title || 'Task'}`;
             
             await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, emailRecipient, token);
             console.log(`[Task Email] Email sent successfully to ${emailRecipient}`);
@@ -397,14 +405,16 @@ export async function deleteTask(projectId: ProjectId, taskId: string, token?: s
         title: taskData.title,
       });
       
+      const projectName = project?.displayName || projectId;
       const emailBody = `Hello,\n\n` +
+        `Project: ${projectName}\n\n` +
         `The task you were assigned to has been deleted.\n\n` +
         `Task: ${taskData.title || 'Untitled Task'}\n` +
         `Description: ${taskData.description || 'No description'}\n\n` +
         `---\n` +
         `This task has been removed from the system. If you have any questions, please contact the team.\n`;
       
-      const subject = `Task Deleted: ${taskData.title || 'Task'}`;
+      const subject = `[${projectName}] Task Deleted: ${taskData.title || 'Task'}`;
       
       await sendTaskUpdateEmail(projectId, taskId, subject, emailBody, taskData.assignedTo, token);
       console.log(`[Task Email] Deletion email sent successfully to ${taskData.assignedTo}`);

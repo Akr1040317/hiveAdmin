@@ -86,7 +86,9 @@ export async function createFeature(
       };
       
       // Build email body
+      const projectName = project?.displayName || projectId;
       let emailBody = `Hello,\n\n`;
+      emailBody += `Project: ${projectName}\n\n`;
       emailBody += `You have been assigned to a new feature.\n\n`;
       emailBody += `Feature: ${featureData.title || 'Untitled Feature'}\n`;
       emailBody += `Description: ${featureData.description || 'No description'}\n\n`;
@@ -100,7 +102,7 @@ export async function createFeature(
       emailBody += `\n---\n`;
       emailBody += `View this feature in the admin panel for more details.\n`;
       
-      const subject = `You've been assigned to: ${featureData.title || 'Feature'}`;
+      const subject = `[${projectName}] You've been assigned to: ${featureData.title || 'Feature'}`;
       
       await sendFeatureUpdateEmail(projectId, featureId, subject, emailBody, featureData.assignedTo, token);
       console.log(`[Feature Email] Email sent successfully to ${featureData.assignedTo}`);
@@ -207,7 +209,9 @@ export async function updateFeature(
             oldAssignee: normalizedOldAssignedTo,
           });
           
+          const projectName = project?.displayName || projectId;
           let emailBody = `Hello,\n\n`;
+          emailBody += `Project: ${projectName}\n\n`;
           emailBody += `You have been unassigned from this feature.\n\n`;
           emailBody += `Feature: ${previousData?.title || 'Untitled Feature'}\n`;
           emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -216,7 +220,7 @@ export async function updateFeature(
           emailBody += `\n---\n`;
           emailBody += `You are no longer responsible for this feature.\n`;
           
-          const subject = `Unassigned from: ${previousData?.title || 'Feature'}`;
+          const subject = `[${projectName}] Unassigned from: ${previousData?.title || 'Feature'}`;
           
           await sendFeatureUpdateEmail(projectId, featureId, subject, emailBody, normalizedOldAssignedTo, token);
           console.log(`[Feature Email] Unassignment email sent successfully to ${normalizedOldAssignedTo}`);
@@ -239,7 +243,9 @@ export async function updateFeature(
               creatorEmail,
             });
             
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             emailBody += `Great news! The feature you created has been released.\n\n`;
             emailBody += `Feature: ${previousData?.title || 'Untitled Feature'}\n`;
             emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -255,7 +261,7 @@ export async function updateFeature(
             emailBody += `\n---\n`;
             emailBody += `Thank you for creating this feature. If you have any questions or concerns, please reply to this email.\n`;
             
-            const subject = `Feature Released: ${previousData?.title || 'Feature'}`;
+            const subject = `[${projectName}] Feature Released: ${previousData?.title || 'Feature'}`;
             
             await sendFeatureUpdateEmail(projectId, featureId, subject, emailBody, creatorEmail, token);
             console.log(`[Feature Email] Release email sent successfully to ${creatorEmail}`);
@@ -296,7 +302,9 @@ export async function updateFeature(
           });
           try {
             // Build email body
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             
             if (changes.includes('assignment')) {
               if (normalizedOldAssignedTo) {
@@ -335,8 +343,8 @@ export async function updateFeature(
             emailBody += `View this feature in the admin panel for more details.\n`;
             
             const subject = changes.includes('assignment') && !normalizedOldAssignedTo
-              ? `You've been assigned to: ${previousData?.title || 'Feature'}`
-              : `Update: ${previousData?.title || 'Feature'}`;
+              ? `[${projectName}] You've been assigned to: ${previousData?.title || 'Feature'}`
+              : `[${projectName}] Update: ${previousData?.title || 'Feature'}`;
             
             await sendFeatureUpdateEmail(projectId, featureId, subject, emailBody, emailRecipient, token);
             console.log(`[Feature Email] Email sent successfully to ${emailRecipient}`);
@@ -396,14 +404,16 @@ export async function deleteFeature(projectId: ProjectId, featureId: string, tok
         title: featureData.title,
       });
       
+      const projectName = project?.displayName || projectId;
       const emailBody = `Hello,\n\n` +
+        `Project: ${projectName}\n\n` +
         `The feature you were assigned to has been deleted.\n\n` +
         `Feature: ${featureData.title || 'Untitled Feature'}\n` +
         `Description: ${featureData.description || 'No description'}\n\n` +
         `---\n` +
         `This feature has been removed from the system. If you have any questions, please contact the team.\n`;
       
-      const subject = `Feature Deleted: ${featureData.title || 'Feature'}`;
+      const subject = `[${projectName}] Feature Deleted: ${featureData.title || 'Feature'}`;
       
       await sendFeatureUpdateEmail(projectId, featureId, subject, emailBody, featureData.assignedTo, token);
       console.log(`[Feature Email] Deletion email sent successfully to ${featureData.assignedTo}`);

@@ -100,7 +100,9 @@ export async function createBug(
       };
       
       // Build email body
+      const projectName = project?.displayName || projectId;
       let emailBody = `Hello,\n\n`;
+      emailBody += `Project: ${projectName}\n\n`;
       emailBody += `You have been assigned to a new bug.\n\n`;
       emailBody += `Bug: ${bugData.title || 'Untitled Bug'}\n`;
       emailBody += `Description: ${bugData.description || 'No description'}\n\n`;
@@ -114,7 +116,7 @@ export async function createBug(
       emailBody += `\n---\n`;
       emailBody += `View this bug in the admin panel for more details.\n`;
       
-      const subject = `You've been assigned to: ${bugData.title || 'Bug'}`;
+      const subject = `[${projectName}] You've been assigned to: ${bugData.title || 'Bug'}`;
       
       await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, bugData.assignedTo);
       console.log(`[Bug Email] Email sent successfully to ${bugData.assignedTo}`);
@@ -236,7 +238,9 @@ export async function updateBug(
             oldAssignee: normalizedOldAssignedTo,
           });
           
+          const projectName = project?.displayName || projectId;
           let emailBody = `Hello,\n\n`;
+          emailBody += `Project: ${projectName}\n\n`;
           emailBody += `You have been unassigned from this bug.\n\n`;
           emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
           emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -245,7 +249,7 @@ export async function updateBug(
           emailBody += `\n---\n`;
           emailBody += `You are no longer responsible for this bug.\n`;
           
-          const subject = `Unassigned from: ${previousData?.title || 'Bug'}`;
+          const subject = `[${projectName}] Unassigned from: ${previousData?.title || 'Bug'}`;
           
           await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, normalizedOldAssignedTo);
           console.log(`[Bug Email] Unassignment email sent successfully to ${normalizedOldAssignedTo}`);
@@ -268,7 +272,9 @@ export async function updateBug(
               reporterEmail,
             });
             
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             emailBody += `Great news! The bug you reported has been ${data.status === 'fixed' ? 'fixed' : 'verified'}.\n\n`;
             emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
             emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
@@ -284,7 +290,7 @@ export async function updateBug(
             emailBody += `\n---\n`;
             emailBody += `Thank you for reporting this issue. If you have any questions or concerns, please reply to this email.\n`;
             
-            const subject = `Bug ${data.status === 'fixed' ? 'Fixed' : 'Verified'}: ${previousData?.title || 'Bug'}`;
+            const subject = `[${projectName}] Bug ${data.status === 'fixed' ? 'Fixed' : 'Verified'}: ${previousData?.title || 'Bug'}`;
             
             await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, reporterEmail);
             console.log(`[Bug Email] Resolution email sent successfully to ${reporterEmail}`);
@@ -325,7 +331,9 @@ export async function updateBug(
           });
           try {
             // Build email body
+            const projectName = project?.displayName || projectId;
             let emailBody = `Hello,\n\n`;
+            emailBody += `Project: ${projectName}\n\n`;
             
             if (changes.includes('assignment')) {
               if (normalizedOldAssignedTo) {
@@ -364,8 +372,8 @@ export async function updateBug(
             emailBody += `View this bug in the admin panel for more details.\n`;
             
             const subject = changes.includes('assignment') && !normalizedOldAssignedTo
-              ? `You've been assigned to: ${previousData?.title || 'Bug'}`
-              : `Update: ${previousData?.title || 'Bug'}`;
+              ? `[${projectName}] You've been assigned to: ${previousData?.title || 'Bug'}`
+              : `[${projectName}] Update: ${previousData?.title || 'Bug'}`;
             
             await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, emailRecipient);
             console.log(`[Bug Email] Email sent successfully to ${emailRecipient}`);
@@ -432,14 +440,16 @@ export async function deleteBug(projectId: ProjectId, bugId: string, token?: str
         title: bugData.title,
       });
       
+      const projectName = project?.displayName || projectId;
       const emailBody = `Hello,\n\n` +
+        `Project: ${projectName}\n\n` +
         `The bug you were assigned to has been deleted.\n\n` +
         `Bug: ${bugData.title || 'Untitled Bug'}\n` +
         `Description: ${bugData.description || 'No description'}\n\n` +
         `---\n` +
         `This bug has been removed from the system. If you have any questions, please contact the team.\n`;
       
-      const subject = `Bug Deleted: ${bugData.title || 'Bug'}`;
+      const subject = `[${projectName}] Bug Deleted: ${bugData.title || 'Bug'}`;
       
       await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, bugData.assignedTo);
       console.log(`[Bug Email] Deletion email sent successfully to ${bugData.assignedTo}`);

@@ -158,7 +158,9 @@ export async function sendCalendarItemNotification(
     };
     
     // Build email body
+    const projectName = project?.displayName || projectId;
     let emailBody = `Hello,\n\n`;
+    emailBody += `Project: ${projectName}\n\n`;
     emailBody += `You have been notified about a ${typeLabels[item.type] || item.type.toLowerCase()}.\n\n`;
     emailBody += `${typeLabels[item.type] || item.type}: ${item.title}\n`;
     emailBody += `Date: ${dateTimeStr}\n`;
@@ -171,7 +173,7 @@ export async function sendCalendarItemNotification(
     emailBody += `\n---\n`;
     emailBody += `View this item in the admin panel for more details.\n`;
     
-    const subject = `${typeLabels[item.type] || item.type} Notification: ${item.title}`;
+    const subject = `[${projectName}] ${typeLabels[item.type] || item.type} Notification: ${item.title}`;
     
     // Call Firebase Cloud Function to send email
     const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;
@@ -276,7 +278,9 @@ export async function sendCalendarItemReminder(
     };
     
     // Build email body
+    const projectName = project?.displayName || projectId;
     let emailBody = `Hello,\n\n`;
+    emailBody += `Project: ${projectName}\n\n`;
     emailBody += `This is a reminder that you have a ${typeLabels[item.type] || item.type.toLowerCase()} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}.\n\n`;
     emailBody += `${typeLabels[item.type] || item.type}: ${item.title}\n`;
     emailBody += `Date: ${dateTimeStr}\n`;
@@ -289,7 +293,7 @@ export async function sendCalendarItemReminder(
     emailBody += `\n---\n`;
     emailBody += `View this item in the admin panel for more details.\n`;
     
-    const subject = `Reminder: ${item.title} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`;
+    const subject = `[${projectName}] Reminder: ${item.title} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`;
     
     // Call Firebase Cloud Function to send email
     const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;

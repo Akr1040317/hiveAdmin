@@ -151,7 +151,9 @@ export async function sendMeetingInvite(
     };
     
     // Build email body
+    const projectName = project?.displayName || projectId;
     let emailBody = `Hello,\n\n`;
+    emailBody += `Project: ${projectName}\n\n`;
     emailBody += `You have been invited to a meeting.\n\n`;
     emailBody += `Meeting: ${meeting.title}\n`;
     emailBody += `Type: ${meetingTypeLabels[meeting.meetingType] || meeting.meetingType}\n`;
@@ -178,7 +180,7 @@ export async function sendMeetingInvite(
     emailBody += `A calendar invitation (.ics file) is attached to this email. You can add it to your calendar.\n`;
     emailBody += `View this meeting in the admin panel for more details.\n`;
     
-    const subject = `Meeting Invitation: ${meeting.title}`;
+    const subject = `[${projectName}] Meeting Invitation: ${meeting.title}`;
     
     // Call Firebase Cloud Function to send email with .ics attachment
     const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendMeetingInviteEmail`;
@@ -284,7 +286,9 @@ export async function sendMeetingReminder(
     };
     
     // Build email body
+    const projectName = project?.displayName || projectId;
     let emailBody = `Hello,\n\n`;
+    emailBody += `Project: ${projectName}\n\n`;
     emailBody += `This is a reminder that you have a meeting ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}.\n\n`;
     emailBody += `Meeting: ${meeting.title}\n`;
     emailBody += `Type: ${meetingTypeLabels[meeting.meetingType] || meeting.meetingType}\n`;
@@ -302,7 +306,7 @@ export async function sendMeetingReminder(
     emailBody += `\n---\n`;
     emailBody += `View this meeting in the admin panel for more details.\n`;
     
-    const subject = `Reminder: ${meeting.title} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`;
+    const subject = `[${projectName}] Reminder: ${meeting.title} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`;
     
     // Call Firebase Cloud Function to send email
     const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;
