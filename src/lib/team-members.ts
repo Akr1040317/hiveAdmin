@@ -2,7 +2,7 @@ import { ProjectId } from './projects';
 
 /**
  * Team member email addresses for each project
- * prepcenter-uae and prepcenter-oman have team members configured for assignment
+ * prepcenter-uae, prepcenter-oman, and hive-learner have team members configured for assignment
  */
 export const TEAM_MEMBERS: Record<ProjectId, string[]> = {
   'prepcenter-uae': [
@@ -19,7 +19,12 @@ export const TEAM_MEMBERS: Record<ProjectId, string[]> = {
     'erastogi@hivespelling.com',
     'vishwa@spellingbee.ae',
   ],
-  'hive-learner': [],
+  'hive-learner': [
+    'vinitaprasad2011@gmail.com',
+    'team@hivespelling.com',
+    'arastogi@hivespelling.com',
+    'erastogi@hivespelling.com',
+  ],
 };
 
 /**
@@ -33,8 +38,8 @@ export function getTeamMembers(projectId: ProjectId): string[] {
 
 /**
  * Check if a project supports user assignment
- * prepcenter-uae and prepcenter-oman support assignment
+ * prepcenter-uae, prepcenter-oman, and hive-learner support assignment
  */
 export function supportsAssignment(projectId: ProjectId): boolean {
-  return projectId === 'prepcenter-uae' || projectId === 'prepcenter-oman';
+  return projectId === 'prepcenter-uae' || projectId === 'prepcenter-oman' || projectId === 'hive-learner';
 }

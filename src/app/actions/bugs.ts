@@ -65,9 +65,9 @@ export async function createBug(
 ): Promise<string> {
   const user = await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   const bugData = {
     ...data,
@@ -153,9 +153,9 @@ export async function updateBug(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   if (shouldSendEmails) {
     // Get previous data to detect changes
@@ -419,9 +419,9 @@ export async function updateBug(
 export async function deleteBug(projectId: ProjectId, bugId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   // Get bug data before deleting (for email notification)
   let bugData: Bug | null = null;

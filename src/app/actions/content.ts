@@ -48,9 +48,9 @@ export async function createContent(
 ): Promise<string> {
   const user = await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   const contentId = await createDocument<Content>(projectId, 'content', data);
   
@@ -120,9 +120,9 @@ export async function updateContent(
 ): Promise<void> {
   const user = await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   // Get previous data to detect changes
   const previousData = await getDocumentData<Content>(projectId, 'content', contentId);
@@ -396,7 +396,7 @@ export async function getContentByChannel(
 
 /**
  * Send content update email via Firebase Cloud Function
- * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
  */
 export async function sendContentUpdateEmail(
   projectId: ProjectId,
@@ -408,9 +408,9 @@ export async function sendContentUpdateEmail(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   if (!shouldSendEmails) {
     console.log('[Content Email] Skipping email - not prepcenter-uae project');
@@ -565,9 +565,9 @@ export async function checkContentReminders(
 ): Promise<{ checked: number; remindersSent: number; errors: number }> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   if (!shouldSendEmails) {
     console.log('[Content Reminder] Skipping reminder check - not prepcenter project');

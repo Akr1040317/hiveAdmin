@@ -101,7 +101,7 @@ export async function getCalendarItemsByStatus(
 
 /**
  * Send calendar item notification email
- * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
  */
 export async function sendCalendarItemNotification(
   projectId: ProjectId,
@@ -111,12 +111,12 @@ export async function sendCalendarItemNotification(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   if (!shouldSendEmails) {
-    console.log('[Calendar Email] Skipping notification - not prepcenter project');
+    console.log('[Calendar Email] Skipping notification - not supported project');
     return;
   }
   
@@ -220,7 +220,7 @@ export async function sendCalendarItemNotification(
 
 /**
  * Send calendar item reminder email
- * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
  */
 export async function sendCalendarItemReminder(
   projectId: ProjectId,
@@ -230,12 +230,12 @@ export async function sendCalendarItemReminder(
 ): Promise<void> {
   await requireAuth(token);
   
-  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  // Only send emails for prepcenter projects (prepcenter-uae, prepcenter-oman) and hive-learner
   const project = getProject(projectId);
-  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  const shouldSendEmails = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman' || project?.id === 'hive-learner';
   
   if (!shouldSendEmails) {
-    console.log('[Calendar Email] Skipping reminder - not prepcenter project');
+    console.log('[Calendar Email] Skipping reminder - not supported project');
     return;
   }
   
