@@ -3,19 +3,20 @@
 import React from 'react';
 import { ViewType } from '@/lib/views';
 import { Button } from '@/components/ui/Button';
-import { Plus, MoreVertical, Grid3x3, Table as TableIcon, Calendar } from 'lucide-react';
+import { Plus, MoreVertical, Grid3x3, Table as TableIcon, Calendar, CheckSquare2 } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { cn } from '@/lib/utils';
 import { useProject } from '@/contexts/ProjectContext';
 import { useView } from '@/contexts/ViewContext';
 
 interface ViewTabsProps {
-  availableViewTypes: ViewType[];
-  onViewTypeChange: (viewType: ViewType) => void;
+  availableViewTypes: (ViewType | 'tracker')[];
+  onViewTypeChange: (viewType: ViewType | 'tracker') => void;
   onCreateView?: () => void;
   onRenameView?: () => void;
   onDeleteView?: () => void;
   accent?: 'purple' | 'orange' | 'blue' | boolean;
+  currentViewType?: ViewType | 'tracker';
 }
 
 export function ViewTabs({
@@ -25,10 +26,14 @@ export function ViewTabs({
   onRenameView,
   onDeleteView,
   accent = false,
+  currentViewType,
 }: ViewTabsProps) {
   const { project } = useProject();
   const { currentView, views } = useView();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  
+  // Use provided currentViewType or fall back to currentView?.viewType
+  const activeViewType = currentViewType || currentView?.viewType;
 
   const getAccentColor = () => {
     if (accent === true) return 'purple';
@@ -39,22 +44,24 @@ export function ViewTabs({
   const accentColor = getAccentColor();
   const accentClasses = project?.accentClasses;
 
-  const viewTypeLabels: Record<ViewType, string> = {
+  const viewTypeLabels: Record<ViewType | 'tracker', string> = {
     table: 'Table',
     board: 'Kanban',
     calendar: 'Calendar',
+    tracker: 'Tracker',
   };
 
-  const viewTypeIcons: Record<ViewType, React.ReactNode> = {
+  const viewTypeIcons: Record<ViewType | 'tracker', React.ReactNode> = {
     table: <TableIcon className="w-4 h-4" />,
     board: <Grid3x3 className="w-4 h-4" />,
     calendar: <Calendar className="w-4 h-4" />,
+    tracker: <CheckSquare2 className="w-4 h-4" />,
   };
 
   return (
     <div className="flex items-center gap-1 border-b border-border-subtle px-6 bg-background-card/30">
       {availableViewTypes.map((viewType) => {
-        const isActive = currentView?.viewType === viewType;
+        const isActive = activeViewType === viewType;
         return (
           <button
             key={viewType}

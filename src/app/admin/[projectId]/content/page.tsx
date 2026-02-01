@@ -16,6 +16,21 @@ import { Badge } from '@/components/ui/Badge';
 import { Filter, Sort } from '@/lib/views';
 import { format, isAfter } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  getContentRequirements,
+  checkRequirementCompliance,
+  ContentRequirement,
+  confirmRequirement,
+  markRequirementMissed,
+  ContentRequirementType,
+} from '@/app/actions/content-requirements';
+import { RequirementStatus } from '@/components/content/RequirementStatus';
+import { RequirementTracker } from '@/components/content/RequirementTracker';
+import { isContentInPeriod, formatPeriodKey, getPeriodStart } from '@/lib/content-requirements';
+import { Card, CardContent } from '@/components/ui/Card';
+import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
+import { Button } from '@/components/ui/Button';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 function ContentContent() {
   const { project, projectId } = useProject();
@@ -29,19 +44,62 @@ function ContentContent() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  const [linkedRequirement, setLinkedRequirement] = useState<ContentRequirement | null>(null);
+  const [allRequirements, setAllRequirements] = useState<ContentRequirement[]>([]);
 
   const { execute: loadContent, loading } = useServerAction(getContent);
   const { execute: handleCreateContent } = useServerAction(createContent);
   const { execute: handleUpdateContent } = useServerAction(updateContent);
   const { execute: handleDeleteContent } = useServerAction(deleteContent);
+  const { execute: loadRequirements } = useServerAction(getContentRequirements);
+  const { execute: checkCompliance } = useServerAction(checkRequirementCompliance);
+  const { execute: confirmReq } = useServerAction(confirmRequirement);
+  const { execute: markMissed } = useServerAction(markRequirementMissed);
 
   useEffect(() => {
     if (projectId) {
       loadContent(projectId).then((data) => {
-        if (data) setContent(data);
+        if (data) {
+          setContent(data);
+          // Check compliance when content loads (non-blocking)
+          checkCompliance(projectId).catch((error) => {
+            // Silently fail - compliance check is optional
+            console.error('Failed to check compliance:', error);
+          });
+        }
+      });
+      
+      // Load all requirements for tracker view
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 3);
+      loadRequirements(projectId, {
+        startDate: new Date(),
+        endDate,
+      }).then((reqs) => {
+        if (reqs) setAllRequirements(reqs);
       });
     }
   }, [projectId]);
+
+  useEffect(() => {
+    if (selectedContent && projectId) {
+      // Find linked requirement for selected content
+      loadRequirements(projectId, {
+        contentType: selectedContent.contentType as any,
+      }).then((reqs) => {
+        if (reqs && selectedContent.publishAt) {
+          const matching = reqs.find((req) =>
+            isContentInPeriod(selectedContent, req)
+          );
+          setLinkedRequirement(matching || null);
+        } else {
+          setLinkedRequirement(null);
+        }
+      });
+    } else {
+      setLinkedRequirement(null);
+    }
+  }, [selectedContent, projectId]);
 
   const filteredContent = useMemo(() => {
     let result = content;
@@ -64,6 +122,16 @@ function ContentContent() {
 
   const handleCreate = async (data: Partial<Content>) => {
     if (!projectId) return;
+    
+    // Calculate requirement period if publishAt is set
+    let requirementPeriod: string | undefined;
+    if (data.publishAt) {
+      const contentType = data.contentType || 'article';
+      const periodType = contentType === 'word_of_the_day' ? 'daily' : 'weekly';
+      const periodStart = getPeriodStart(new Date(data.publishAt), periodType);
+      requirementPeriod = formatPeriodKey(periodStart, periodType);
+    }
+    
     const newContent: Omit<Content, 'id' | 'createdAt' | 'updatedAt'> = {
       title: data.title || 'Untitled Content',
       description: data.description || '',
@@ -71,20 +139,38 @@ function ContentContent() {
       channel: data.channel || 'web',
       publishAt: data.publishAt || new Date(),
       dueAt: data.dueAt,
+      requirementPeriod,
       status: data.status || 'idea',
       owner: data.owner || user?.email || '',
     };
     await handleCreateContent(projectId, newContent);
     const updated = await loadContent(projectId);
-    if (updated) setContent(updated);
+    if (updated) {
+      setContent(updated);
+      // Check compliance after creating content
+      await checkCompliance(projectId);
+    }
     setIsDrawerOpen(false);
   };
 
   const handleUpdate = async (updates: Partial<Content>) => {
     if (!projectId || !selectedContent) return;
+    
+    // Calculate requirement period if publishAt is being updated
+    if (updates.publishAt !== undefined) {
+      const contentType = updates.contentType || selectedContent.contentType;
+      const periodType = contentType === 'word_of_the_day' ? 'daily' : 'weekly';
+      const periodStart = getPeriodStart(new Date(updates.publishAt), periodType);
+      updates.requirementPeriod = formatPeriodKey(periodStart, periodType);
+    }
+    
     await handleUpdateContent(projectId, selectedContent.id, updates);
     const updated = await loadContent(projectId);
-    if (updated) setContent(updated);
+    if (updated) {
+      setContent(updated);
+      // Check compliance after updating content
+      await checkCompliance(projectId);
+    }
     setSelectedContent({ ...selectedContent, ...updates });
   };
 
@@ -101,6 +187,14 @@ function ContentContent() {
 
   const handleCardMove = async (contentId: string, newStatus: Content['status']) => {
     if (!projectId) return;
+    
+    // Validate verification before allowing scheduled/sent
+    const contentItem = content.find(c => c.id === contentId);
+    if ((newStatus === 'scheduled' || newStatus === 'sent') && contentItem?.status !== 'verified') {
+      alert('Content must be verified before it can be scheduled or sent. Please verify the content first.');
+      return;
+    }
+    
     await handleUpdateContent(projectId, contentId, { status: newStatus });
     const updated = await loadContent(projectId);
     if (updated) setContent(updated);
@@ -119,10 +213,12 @@ function ContentContent() {
     { value: 'idea', label: 'Idea' },
     { value: 'in_creation', label: 'In Creation' },
     { value: 'ready', label: 'Ready' },
+    { value: 'verified', label: 'Verified' },
     { value: 'scheduled', label: 'Scheduled' },
     { value: 'sent', label: 'Sent' },
-    { value: 'verified', label: 'Verified' },
   ];
+  
+  const teamMembers = supportsAssignment(projectId) ? getTeamMembers(projectId) : [];
 
   const contentTypeOptions = [
     { value: 'video', label: 'Video' },
@@ -130,6 +226,8 @@ function ContentContent() {
     { value: 'tips_tricks', label: 'Tips & Tricks' },
     { value: 'notification', label: 'Notification' },
     { value: 'email_campaign', label: 'Email Campaign' },
+    { value: 'announcement', label: 'Announcement' },
+    { value: 'word_of_the_day', label: 'Word of the Day' },
   ];
 
   const channelOptions = [
@@ -224,6 +322,26 @@ function ContentContent() {
         </span>
       ),
     },
+    {
+      key: 'requirementPeriod',
+      header: 'Requirement',
+      sortable: true,
+      render: (c) => (
+        <span className="text-xs text-gray-400">
+          {c.requirementPeriod || '—'}
+        </span>
+      ),
+    },
+    ...(supportsAssignment(projectId) ? [{
+      key: 'assignedTo',
+      header: 'ASSIGNED TO',
+      sortable: true,
+      render: (c) => (
+        <span className="text-xs text-gray-400">
+          {c.assignedTo ? c.assignedTo.split('@')[0] : 'Unassigned'}
+        </span>
+      ),
+    }] : []),
   ];
 
   const boardColumns = [
@@ -235,7 +353,8 @@ function ContentContent() {
     { id: 'verified', title: 'Verified', status: 'verified' },
   ];
 
-  const viewType = currentView?.viewType || 'table';
+  const [localViewType, setLocalViewType] = useState<'table' | 'board' | 'calendar' | 'tracker'>('table');
+  const viewType = localViewType === 'tracker' ? 'tracker' : (currentView?.viewType || 'table');
   const accent = project?.accentColorKey || false;
 
   return (
@@ -250,7 +369,19 @@ function ContentContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['table', 'board', 'calendar']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs 
+        availableViewTypes={['table', 'board', 'calendar', 'tracker']} 
+        onViewTypeChange={(vt) => {
+          if (vt === 'tracker') {
+            setLocalViewType('tracker');
+          } else {
+            setLocalViewType(vt as 'table' | 'board' | 'calendar');
+            switchViewType(vt);
+          }
+        }} 
+        currentViewType={viewType}
+        accent={accent} 
+      />
 
       <ViewToolbar
         searchValue={search}
@@ -276,6 +407,92 @@ function ContentContent() {
       <div className="flex-1 overflow-auto px-6 py-4">
         {loading ? (
           <div className="text-center py-12 text-gray-400">Loading content...</div>
+        ) : viewType === 'tracker' ? (
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-200 mb-2">Weekly Requirements</h2>
+              <p className="text-sm text-gray-400">Track weekly content publishing requirements</p>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {(['video', 'article', 'tips_tricks'] as ContentRequirementType[]).map((type) => (
+                <Card key={type} className="bg-background-card/50 border-border-subtle">
+                  <CardContent className="p-6">
+                    <RequirementTracker
+                      requirements={allRequirements}
+                      contentType={type}
+                      content={content}
+                      onConfirm={async (reqId) => {
+                        if (projectId && user?.email) {
+                          await confirmReq(projectId, reqId, undefined, user.email);
+                          // Reload requirements
+                          const endDate = new Date();
+                          endDate.setMonth(endDate.getMonth() + 3);
+                          const reqs = await loadRequirements(projectId, {
+                            startDate: new Date(),
+                            endDate,
+                          });
+                          if (reqs) setAllRequirements(reqs);
+                        }
+                      }}
+                      onMarkMissed={async (reqId) => {
+                        if (projectId) {
+                          await markMissed(projectId, reqId);
+                          // Reload requirements
+                          const endDate = new Date();
+                          endDate.setMonth(endDate.getMonth() + 3);
+                          const reqs = await loadRequirements(projectId, {
+                            startDate: new Date(),
+                            endDate,
+                          });
+                          if (reqs) setAllRequirements(reqs);
+                        }
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            
+            <div className="mt-8">
+              <h2 className="text-lg font-semibold text-gray-200 mb-2">Daily Requirements</h2>
+              <p className="text-sm text-gray-400">Track daily Word of the Day publishing</p>
+            </div>
+            <Card className="bg-background-card/50 border-border-subtle">
+              <CardContent className="p-6">
+                <RequirementTracker
+                  requirements={allRequirements}
+                  contentType="word_of_the_day"
+                  content={content}
+                  onConfirm={async (reqId) => {
+                    if (projectId && user?.email) {
+                      await confirmReq(projectId, reqId, undefined, user.email);
+                      // Reload requirements
+                      const endDate = new Date();
+                      endDate.setDate(endDate.getDate() + 30);
+                      const reqs = await loadRequirements(projectId, {
+                        startDate: new Date(),
+                        endDate,
+                      });
+                      if (reqs) setAllRequirements(reqs);
+                    }
+                  }}
+                  onMarkMissed={async (reqId) => {
+                    if (projectId) {
+                      await markMissed(projectId, reqId);
+                      // Reload requirements
+                      const endDate = new Date();
+                      endDate.setDate(endDate.getDate() + 30);
+                      const reqs = await loadRequirements(projectId, {
+                        startDate: new Date(),
+                        endDate,
+                      });
+                      if (reqs) setAllRequirements(reqs);
+                    }
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </div>
         ) : viewType === 'table' ? (
           <TableView
             data={filteredContent}
@@ -309,13 +526,21 @@ function ContentContent() {
                   label: c.contentType.replace('_', ' '), 
                   variant: 'secondary' 
                 },
+                c.status === 'verified' && {
+                  label: 'Verified',
+                  variant: 'success',
+                },
+                c.reminderSent && {
+                  label: 'Reminder Sent',
+                  variant: 'warning',
+                },
                 isOverdue(c) && { 
                   label: 'Overdue', 
                   variant: 'critical' 
                 },
               ].filter(Boolean) as any,
               updatedAt: c.updatedAt,
-              userId: c.owner?.split('@')[0] || 'user',
+              userId: c.assignedTo?.split('@')[0] || c.owner?.split('@')[0] || 'user',
             })}
             onCardClick={(c) => {
               setSelectedContent(c);
@@ -362,9 +587,23 @@ function ContentContent() {
             label: 'Status',
             type: 'select',
             value: selectedContent?.status || 'idea',
-            options: statusOptions,
+            options: statusOptions.filter(opt => {
+              // Prevent selecting scheduled/sent if not verified
+              if (!selectedContent) return true;
+              if (opt.value === 'scheduled' || opt.value === 'sent') {
+                return selectedContent.status === 'verified';
+              }
+              return true;
+            }),
             onChange: (value) => {
-              if (selectedContent) handleUpdate({ status: value as Content['status'] });
+              if (selectedContent) {
+                // Validate verification before allowing scheduled/sent
+                if ((value === 'scheduled' || value === 'sent') && selectedContent.status !== 'verified') {
+                  alert('Content must be verified before it can be scheduled or sent. Please verify the content first.');
+                  return;
+                }
+                handleUpdate({ status: value as Content['status'] });
+              }
             },
           },
           {
@@ -406,6 +645,12 @@ function ContentContent() {
             },
           },
         ]}
+        showAssignment={supportsAssignment(projectId)}
+        teamMembers={teamMembers}
+        assignedTo={selectedContent?.assignedTo || null}
+        onAssignedToChange={(email) => {
+          if (selectedContent) handleUpdate({ assignedTo: email || undefined });
+        }}
         bodyFields={[
           {
             key: 'description',
@@ -417,6 +662,97 @@ function ContentContent() {
             placeholder: 'Content description...',
           },
         ]}
+        customContent={
+          <div className="mt-4 pt-4 border-t border-border-subtle space-y-4">
+            {/* Verification Status */}
+            {selectedContent && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+                  Verification Status
+                </h3>
+                {selectedContent.status === 'verified' ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-green-400">Content Verified</p>
+                      {selectedContent.verifiedAt && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Verified on {format(new Date(selectedContent.verifiedAt), 'MMM d, yyyy h:mm a')}
+                          {selectedContent.verifiedBy && ` by ${selectedContent.verifiedBy.split('@')[0]}`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : selectedContent.status === 'ready' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                      <AlertCircle className="w-5 h-5 text-yellow-400" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-yellow-400">Ready for Verification</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Content must be verified before it can be scheduled or sent
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        if (selectedContent) {
+                          handleUpdate({ status: 'verified' });
+                        }
+                      }}
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      accent
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Verify Content
+                    </Button>
+                  </div>
+                ) : (selectedContent.status === 'scheduled' || selectedContent.status === 'sent') && !selectedContent.verifiedAt ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-400">Not Verified</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        This content should be verified before publishing
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+            
+            {/* Reminder Status */}
+            {selectedContent?.reminderSent && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                  Reminder Status
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Reminder sent on {format(new Date(selectedContent.reminderSent), 'MMM d, yyyy h:mm a')}
+                </p>
+              </div>
+            )}
+            
+            {/* Linked Requirement */}
+            {linkedRequirement ? (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+                  Linked Requirement
+                </h3>
+                <RequirementStatus requirement={linkedRequirement} showLabel={true} />
+              </div>
+            ) : selectedContent?.requirementPeriod ? (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                  Requirement Period
+                </h3>
+                <p className="text-sm text-gray-300">{selectedContent.requirementPeriod}</p>
+              </div>
+            ) : null}
+          </div>
+        }
         metadata={selectedContent ? {
           createdAt: selectedContent.createdAt,
           updatedAt: selectedContent.updatedAt,
