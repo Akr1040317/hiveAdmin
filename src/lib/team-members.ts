@@ -11,7 +11,6 @@ export const TEAM_MEMBERS: Record<ProjectId, string[]> = {
     'arastogi@hivespelling.com',
     'erastogi@hivespelling.com',
     'vishwa@spellingbee.ae',
-    'vishwababbar@gmail.com',
   ],
   'prepcenter-oman': [],
   'hive-learner': [],
