@@ -32,6 +32,16 @@ function BugsContent() {
   const [feedbackReports, setFeedbackReports] = useState<FeedbackReport[]>([]);
   const [convertingReportId, setConvertingReportId] = useState<string | null>(null);
   const [convertedReportId, setConvertedReportId] = useState<string | null>(null);
+  const [newBugData, setNewBugData] = useState<Partial<Bug>>({
+    title: 'New Bug',
+    description: '',
+    status: 'reported',
+    severity: 'medium',
+    platform: 'web',
+    dueDate: undefined,
+    completionDate: undefined,
+    assignedTo: undefined,
+  });
 
   const { execute: loadBugs, loading } = useServerAction(getBugs);
   const { execute: handleCreateBug } = useServerAction(createBug);
@@ -91,6 +101,13 @@ function BugsContent() {
 
   const handleCreate = async (data: Partial<Bug>) => {
     if (!projectId) return;
+    console.log('[Bug Create] Creating new bug:', {
+      projectId,
+      data,
+      hasAssignee: !!data.assignedTo,
+      assignee: data.assignedTo,
+    });
+    
     const newBug: Omit<Bug, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> = {
       title: data.title || 'Untitled Bug',
       description: data.description || '',
@@ -99,19 +116,59 @@ function BugsContent() {
       status: data.status || 'reported',
       tags: data.tags || [],
       order: bugs.length,
+      dueDate: data.dueDate,
+      completionDate: data.completionDate,
+      assignedTo: data.assignedTo,
+      stepsToReproduce: data.stepsToReproduce,
+      expectedBehavior: data.expectedBehavior,
+      actualBehavior: data.actualBehavior,
+      notes: data.notes,
     };
-    await handleCreateBug(projectId, newBug);
-    const updated = await loadBugs(projectId);
-    if (updated) setBugs(updated);
-    setIsDrawerOpen(false);
+    
+    try {
+      const bugId = await handleCreateBug(projectId, newBug);
+      console.log('[Bug Create] Bug created successfully:', bugId);
+      
+      const updated = await loadBugs(projectId);
+      if (updated) setBugs(updated);
+      setIsDrawerOpen(false);
+      setNewBugData({
+        title: 'New Bug',
+        description: '',
+        status: 'reported',
+        severity: 'medium',
+        platform: 'web',
+        dueDate: undefined,
+        completionDate: undefined,
+        assignedTo: undefined,
+      });
+    } catch (error) {
+      console.error('[Bug Create] Failed to create bug:', error);
+      throw error;
+    }
   };
 
   const handleUpdate = async (updates: Partial<Bug>) => {
     if (!projectId || !selectedBug) return;
-    await handleUpdateBug(projectId, selectedBug.id, updates);
-    const updated = await loadBugs(projectId);
-    if (updated) setBugs(updated);
-    setSelectedBug({ ...selectedBug, ...updates });
+    console.log('[Bug Update] Updating bug:', {
+      bugId: selectedBug.id,
+      updates,
+      hasAssigneeChange: 'assignedTo' in updates,
+      newAssignee: updates.assignedTo,
+      oldAssignee: selectedBug.assignedTo,
+    });
+    
+    try {
+      await handleUpdateBug(projectId, selectedBug.id, updates);
+      console.log('[Bug Update] Bug updated successfully');
+      
+      const updated = await loadBugs(projectId);
+      if (updated) setBugs(updated);
+      setSelectedBug({ ...selectedBug, ...updates });
+    } catch (error) {
+      console.error('[Bug Update] Failed to update bug:', error);
+      throw error;
+    }
   };
 
   const handleDelete = async () => {
@@ -487,29 +544,6 @@ ${bug.notes}
       key: 'dueDate',
       header: 'DUE DATE',
       sortable: false,
-      render: () => (
-        <span className="text-xs text-gray-600">-</span>
-      ),
-    },
-    {
-      key: 'completionDate',
-      header: 'COMPLETION DATE',
-      sortable: false,
-      render: (bug) => {
-        if (bug.status === 'fixed' || bug.status === 'verified') {
-          return (
-            <span className="text-xs text-gray-400">
-              {format(new Date(bug.updatedAt), 'MMM d, yyyy')}
-            </span>
-          );
-        }
-        return <span className="text-xs text-gray-600">-</span>;
-      },
-    },
-    {
-      key: 'dueDate',
-      header: 'DUE DATE',
-      sortable: false,
       render: (bug) => (
         <span className="text-xs text-gray-400">
           {bug.dueDate ? format(new Date(bug.dueDate), 'MMM d, yyyy') : '—'}
@@ -632,6 +666,16 @@ ${bug.notes}
         onColumnsChange={(cols) => updateCurrentView({ visibleColumns: cols })}
         onNew={() => {
           setSelectedBug(null);
+          setNewBugData({
+            title: 'New Bug',
+            description: '',
+            status: 'reported',
+            severity: 'medium',
+            platform: 'web',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+          });
           setIsDrawerOpen(true);
         }}
         viewType={viewType}
@@ -658,6 +702,16 @@ ${bug.notes}
             }}
             onQuickAdd={() => {
               setSelectedBug(null);
+              setNewBugData({
+                title: 'New Bug',
+                description: '',
+                status: 'reported',
+                severity: 'medium',
+                platform: 'web',
+                dueDate: undefined,
+                completionDate: undefined,
+                assignedTo: undefined,
+              });
               setIsDrawerOpen(true);
             }}
             emptyMessage="No bugs found. Create your first bug!"
@@ -755,7 +809,17 @@ ${bug.notes}
             }}
             onAddCard={(status) => {
               if (status !== 'pending_reports') {
-                setSelectedBug({ ...selectedBug, status: status as Bug['status'] } as Bug);
+                setSelectedBug(null);
+                setNewBugData({
+                  title: 'New Bug',
+                  description: '',
+                  status: status as Bug['status'],
+                  severity: 'medium',
+                  platform: 'web',
+                  dueDate: undefined,
+                  completionDate: undefined,
+                  assignedTo: undefined,
+                });
                 setIsDrawerOpen(true);
               }
             }}
@@ -790,11 +854,23 @@ ${bug.notes}
         onClose={() => {
           setIsDrawerOpen(false);
           setSelectedBug(null);
+          setNewBugData({
+            title: 'New Bug',
+            description: '',
+            status: 'reported',
+            severity: 'medium',
+            platform: 'web',
+            dueDate: undefined,
+            completionDate: undefined,
+            assignedTo: undefined,
+          });
         }}
-        title={selectedBug?.title || 'New Bug'}
+        title={selectedBug?.title || newBugData.title || 'New Bug'}
         onTitleChange={(title) => {
           if (selectedBug) {
             handleUpdate({ title });
+          } else {
+            setNewBugData(prev => ({ ...prev, title }));
           }
         }}
         properties={[
@@ -802,11 +878,13 @@ ${bug.notes}
             key: 'status',
             label: 'Status',
             type: 'select',
-            value: selectedBug?.status || 'reported',
+            value: selectedBug?.status || newBugData.status || 'reported',
             options: statusOptions,
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ status: value as Bug['status'] });
+              } else {
+                setNewBugData(prev => ({ ...prev, status: value as Bug['status'] }));
               }
             },
           },
@@ -814,11 +892,13 @@ ${bug.notes}
             key: 'severity',
             label: 'Severity',
             type: 'select',
-            value: selectedBug?.severity || 'medium',
+            value: selectedBug?.severity || newBugData.severity || 'medium',
             options: severityOptions,
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ severity: value as Bug['severity'] });
+              } else {
+                setNewBugData(prev => ({ ...prev, severity: value as Bug['severity'] }));
               }
             },
           },
@@ -826,11 +906,13 @@ ${bug.notes}
             key: 'platform',
             label: 'Platform',
             type: 'select',
-            value: selectedBug?.platform || 'web',
+            value: selectedBug?.platform || newBugData.platform || 'web',
             options: platformOptions,
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ platform: value as Bug['platform'] });
+              } else {
+                setNewBugData(prev => ({ ...prev, platform: value as Bug['platform'] }));
               }
             },
           },
@@ -838,10 +920,12 @@ ${bug.notes}
             key: 'dueDate',
             label: 'Due Date',
             type: 'date',
-            value: selectedBug?.dueDate,
+            value: selectedBug?.dueDate || newBugData.dueDate,
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ dueDate: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, dueDate: value }));
               }
             },
           },
@@ -849,10 +933,12 @@ ${bug.notes}
             key: 'completionDate',
             label: 'Completion Date',
             type: 'date',
-            value: selectedBug?.completionDate,
+            value: selectedBug?.completionDate || newBugData.completionDate,
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ completionDate: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, completionDate: value }));
               }
             },
           },
@@ -861,10 +947,12 @@ ${bug.notes}
           {
             key: 'description',
             label: 'Description',
-            value: selectedBug?.description || '',
+            value: selectedBug?.description || newBugData.description || '',
             onChange: (value) => {
               if (selectedBug) {
                 handleUpdate({ description: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, description: value }));
               }
             },
             placeholder: 'Describe the bug...',
@@ -872,10 +960,12 @@ ${bug.notes}
           {
             key: 'stepsToReproduce',
             label: 'Steps to Reproduce',
-            value: selectedBug?.stepsToReproduce || '',
+            value: selectedBug?.stepsToReproduce || newBugData.stepsToReproduce || '',
             onChange: (value: string) => {
               if (selectedBug) {
                 handleUpdate({ stepsToReproduce: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, stepsToReproduce: value }));
               }
             },
             placeholder: 'Describe how to reproduce the bug...',
@@ -883,10 +973,12 @@ ${bug.notes}
           {
             key: 'expectedBehavior',
             label: 'Expected Behavior',
-            value: selectedBug?.expectedBehavior || '',
+            value: selectedBug?.expectedBehavior || newBugData.expectedBehavior || '',
             onChange: (value: string) => {
               if (selectedBug) {
                 handleUpdate({ expectedBehavior: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, expectedBehavior: value }));
               }
             },
             placeholder: 'What should happen...',
@@ -894,10 +986,12 @@ ${bug.notes}
           {
             key: 'actualBehavior',
             label: 'Actual Behavior',
-            value: selectedBug?.actualBehavior || '',
+            value: selectedBug?.actualBehavior || newBugData.actualBehavior || '',
             onChange: (value: string) => {
               if (selectedBug) {
                 handleUpdate({ actualBehavior: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, actualBehavior: value }));
               }
             },
             placeholder: 'What actually happens...',
@@ -905,10 +999,12 @@ ${bug.notes}
           {
             key: 'notes',
             label: 'Notes',
-            value: selectedBug?.notes || '',
+            value: selectedBug?.notes || newBugData.notes || '',
             onChange: (value: string) => {
               if (selectedBug) {
                 handleUpdate({ notes: value });
+              } else {
+                setNewBugData(prev => ({ ...prev, notes: value }));
               }
             },
             placeholder: 'Add internal notes about this bug...',
@@ -923,12 +1019,15 @@ ${bug.notes}
           if (selectedBug) {
             setIsDrawerOpen(false);
           } else {
-            handleCreate({ title: 'Untitled Bug' });
+            handleCreate(newBugData);
           }
         }}
         onDelete={selectedBug ? handleDelete : undefined}
         onUnconvert={convertedReportId ? () => handleUnconvertBug(selectedBug!.id) : undefined}
-        onCopyDetails={selectedBug ? handleCopyDetails : undefined}
+        onCopyDetails={selectedBug ? () => {
+          // Copy functionality is handled by DetailDrawer internally
+          // This is just a placeholder to enable the copy button
+        } : undefined}
         copyDetailsText={selectedBug ? formatBugDetailsForCopy(selectedBug) : undefined}
         reporterEmail={selectedBug ? getReporterEmail(selectedBug) : null}
         onGenerateEmail={selectedBug && projectId ? async () => {
@@ -948,11 +1047,13 @@ ${bug.notes}
         } : undefined}
         lastEmailSent={selectedBug?.lastEmailSent}
         lastEmailSubject={selectedBug?.lastEmailSubject}
-        assignedTo={selectedBug?.assignedTo || null}
+        assignedTo={selectedBug?.assignedTo || newBugData.assignedTo || null}
         teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedBug) {
             handleUpdate({ assignedTo: email || undefined });
+          } else {
+            setNewBugData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
         showAssignment={supportsAssignment(projectId)}

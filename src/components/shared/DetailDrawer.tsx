@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Copy, ExternalLink, Calendar, User, Envelope, Check, Wand2, Send, Mail } from 'lucide-react';
+import { X, Copy, ExternalLink, Calendar, User, Mail, Check, Wand2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -409,7 +409,7 @@ export function DetailDrawer({
               <div className="pt-4 border-t border-border-subtle">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <Envelope className="w-3.5 h-3.5" />
+                    <Mail className="w-3.5 h-3.5" />
                     Send Email Update
                   </h3>
                   <Button

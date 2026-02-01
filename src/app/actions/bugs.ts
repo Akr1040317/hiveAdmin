@@ -65,12 +65,82 @@ export async function createBug(
 ): Promise<string> {
   const user = await requireAuth(token);
   
+  // Only send emails for prepcenter-uae
+  const project = getProject(projectId);
+  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  
   const bugData = {
     ...data,
     createdBy: user.email || 'unknown',
   };
   
-  return createDocument<Bug>(projectId, 'bugs', bugData);
+  const bugId = await createDocument<Bug>(projectId, 'bugs', bugData);
+  
+  // Send email if bug is created with an assignee
+  if (shouldSendEmails && bugData.assignedTo && bugData.assignedTo.trim() && bugData.assignedTo.includes('@')) {
+    try {
+      console.log(`[Bug Email] Sending assignment email for new bug ${bugId}:`, {
+        assignedTo: bugData.assignedTo,
+        title: bugData.title,
+      });
+      
+      const statusLabels: Record<string, string> = {
+        reported: 'Reported',
+        in_progress: 'In Progress',
+        blocked: 'Blocked',
+        fixed: 'Fixed',
+        verified: 'Verified',
+      };
+      
+      const severityLabels: Record<string, string> = {
+        critical: 'Critical',
+        high: 'High',
+        medium: 'Medium',
+        low: 'Low',
+      };
+      
+      // Build email body
+      let emailBody = `Hello,\n\n`;
+      emailBody += `You have been assigned to a new bug.\n\n`;
+      emailBody += `Bug: ${bugData.title || 'Untitled Bug'}\n`;
+      emailBody += `Description: ${bugData.description || 'No description'}\n\n`;
+      emailBody += `Status: ${statusLabels[bugData.status || 'reported']}\n`;
+      emailBody += `Severity: ${severityLabels[bugData.severity || 'medium']}\n`;
+      
+      if (bugData.dueDate) {
+        emailBody += `Due date: ${format(new Date(bugData.dueDate), 'MMM d, yyyy')}\n`;
+      }
+      
+      emailBody += `\n---\n`;
+      emailBody += `View this bug in the admin panel for more details.\n`;
+      
+      const subject = `You've been assigned to: ${bugData.title || 'Bug'}`;
+      
+      await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, bugData.assignedTo);
+      console.log(`[Bug Email] Email sent successfully to ${bugData.assignedTo}`);
+    } catch (error) {
+      // Log error but don't fail the creation
+      console.error('[Bug Email] Failed to send assignment email for new bug:', error);
+      console.error('[Bug Email] Error details:', {
+        bugId,
+        assignedTo: bugData.assignedTo,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+      // Re-throw in development to help debug
+      if (process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+    }
+  } else if (shouldSendEmails && bugData.assignedTo) {
+    console.warn('[Bug Email] Bug created with assignee but email not sent:', {
+      bugId,
+      assignedTo: bugData.assignedTo,
+      reason: !bugData.assignedTo.trim() ? 'Empty assignee' : !bugData.assignedTo.includes('@') ? 'Invalid email format' : 'Unknown',
+    });
+  }
+  
+  return bugId;
 }
 
 export async function updateBug(
@@ -91,10 +161,14 @@ export async function updateBug(
     
     // Detect key changes
     const changes: string[] = [];
-    const newAssignedTo = data.assignedTo !== undefined ? data.assignedTo : previousData?.assignedTo;
-    const oldAssignedTo = previousData?.assignedTo;
+    const newAssignedTo = data.assignedTo !== undefined ? (data.assignedTo || null) : (previousData?.assignedTo || null);
+    const oldAssignedTo = previousData?.assignedTo || null;
     
-    if (data.assignedTo !== undefined && data.assignedTo !== oldAssignedTo) {
+    // Normalize to handle empty strings vs null vs undefined
+    const normalizedNewAssignedTo = newAssignedTo && newAssignedTo.trim() ? newAssignedTo.trim() : null;
+    const normalizedOldAssignedTo = oldAssignedTo && oldAssignedTo.trim() ? oldAssignedTo.trim() : null;
+    
+    if (data.assignedTo !== undefined && normalizedNewAssignedTo !== normalizedOldAssignedTo) {
       changes.push('assignment');
     }
     if (data.status !== undefined && data.status !== previousData?.status) {
@@ -111,71 +185,222 @@ export async function updateBug(
       }
     }
     
-    // Send email if there are changes and there's an assignee
-    if (changes.length > 0 && newAssignedTo) {
-      try {
-        const statusLabels: Record<string, string> = {
-          reported: 'Reported',
-          in_progress: 'In Progress',
-          blocked: 'Blocked',
-          fixed: 'Fixed',
-          verified: 'Verified',
-        };
-        
-        const severityLabels: Record<string, string> = {
-          critical: 'Critical',
-          high: 'High',
-          medium: 'Medium',
-          low: 'Low',
-        };
-        
-        // Build email body
-        let emailBody = `Hello,\n\n`;
+    // Send email if there are changes
+    // Handle different scenarios:
+    // 1. Unassignment - send to old assignee
+    // 2. Assignment/reassignment - send to new assignee
+    // 3. Status to fixed/verified - send to original reporter
+    // 4. Other changes - send to current assignee
+    if (changes.length > 0) {
+      const statusLabels: Record<string, string> = {
+        reported: 'Reported',
+        in_progress: 'In Progress',
+        blocked: 'Blocked',
+        fixed: 'Fixed',
+        verified: 'Verified',
+      };
+      
+      const severityLabels: Record<string, string> = {
+        critical: 'Critical',
+        high: 'High',
+        medium: 'Medium',
+        low: 'Low',
+      };
+      
+      // Helper function to get reporter email
+      const getReporterEmail = async (): Promise<string | null> => {
+        // Check if bug has email in createdBy
+        if (previousData?.createdBy && previousData.createdBy.includes('@')) {
+          return previousData.createdBy;
+        }
+        // If converted from report, try to get email from report
+        if (previousData?.convertedFromReportId) {
+          try {
+            const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+            const reportDoc = await collection.doc(previousData.convertedFromReportId).get();
+            if (reportDoc.exists) {
+              const reportData = reportDoc.data();
+              return reportData?.email || null;
+            }
+          } catch (error) {
+            console.error('[Bug Email] Error fetching reporter email from report:', error);
+          }
+        }
+        return null;
+      };
+      
+      // Scenario 1: Unassignment - send to old assignee
+      if (changes.includes('assignment') && normalizedOldAssignedTo && !normalizedNewAssignedTo) {
+        try {
+          console.log(`[Bug Email] Sending unassignment email for bug ${bugId}:`, {
+            oldAssignee: normalizedOldAssignedTo,
+          });
+          
+          let emailBody = `Hello,\n\n`;
+          emailBody += `You have been unassigned from this bug.\n\n`;
+          emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
+          emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+          emailBody += `Status: ${statusLabels[previousData?.status || 'reported']}\n`;
+          emailBody += `Severity: ${severityLabels[previousData?.severity || 'medium']}\n`;
+          emailBody += `\n---\n`;
+          emailBody += `You are no longer responsible for this bug.\n`;
+          
+          const subject = `Unassigned from: ${previousData?.title || 'Bug'}`;
+          
+          await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, normalizedOldAssignedTo);
+          console.log(`[Bug Email] Unassignment email sent successfully to ${normalizedOldAssignedTo}`);
+        } catch (error) {
+          console.error('[Bug Email] Failed to send unassignment email:', error);
+          if (process.env.NODE_ENV === 'development') {
+            throw error;
+          }
+        }
+      }
+      
+      // Scenario 2: Status changed to fixed/verified - send to reporter
+      if (changes.includes('status') && (data.status === 'fixed' || data.status === 'verified')) {
+        try {
+          const reporterEmail = await getReporterEmail();
+          
+          if (reporterEmail && reporterEmail.includes('@')) {
+            console.log(`[Bug Email] Sending resolution email for bug ${bugId}:`, {
+              status: data.status,
+              reporterEmail,
+            });
+            
+            let emailBody = `Hello,\n\n`;
+            emailBody += `Great news! The bug you reported has been ${data.status === 'fixed' ? 'fixed' : 'verified'}.\n\n`;
+            emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
+            emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+            emailBody += `Status: ${statusLabels[data.status as string]}\n`;
+            emailBody += `Severity: ${severityLabels[previousData?.severity || 'medium']}\n`;
+            
+            // Use updated completion date if provided, otherwise use previous
+            const completionDate = data.completionDate || previousData?.completionDate;
+            if (completionDate) {
+              emailBody += `Completed: ${format(new Date(completionDate), 'MMM d, yyyy')}\n`;
+            }
+            
+            emailBody += `\n---\n`;
+            emailBody += `Thank you for reporting this issue. If you have any questions or concerns, please reply to this email.\n`;
+            
+            const subject = `Bug ${data.status === 'fixed' ? 'Fixed' : 'Verified'}: ${previousData?.title || 'Bug'}`;
+            
+            await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, reporterEmail);
+            console.log(`[Bug Email] Resolution email sent successfully to ${reporterEmail}`);
+          } else {
+            console.log('[Bug Email] Status changed to fixed/verified but no reporter email found:', {
+              bugId,
+              reporterEmail,
+            });
+          }
+        } catch (error) {
+          console.error('[Bug Email] Failed to send resolution email:', error);
+          if (process.env.NODE_ENV === 'development') {
+            throw error;
+          }
+        }
+      }
+      
+      // Scenario 3: Assignment/reassignment or other changes - send to assignee
+      // Only send if there's a current assignee and it's not an unassignment (already handled above)
+      if (!(changes.includes('assignment') && normalizedOldAssignedTo && !normalizedNewAssignedTo)) {
+        let emailRecipient: string | null = null;
         
         if (changes.includes('assignment')) {
-          if (oldAssignedTo) {
-            emailBody += `You have been reassigned to this bug.\n\n`;
-          } else {
-            emailBody += `You have been assigned to this bug.\n\n`;
-          }
-        }
-        
-        emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
-        emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
-        
-        if (changes.includes('status')) {
-          emailBody += `Status changed to: ${statusLabels[data.status as string] || data.status}\n`;
+          // If assignment changed, send to the new assignee
+          emailRecipient = normalizedNewAssignedTo;
         } else {
-          emailBody += `Status: ${statusLabels[previousData?.status || 'reported']}\n`;
+          // For other changes, send to the current assignee
+          emailRecipient = normalizedNewAssignedTo;
         }
         
-        if (changes.includes('severity')) {
-          emailBody += `Severity changed to: ${severityLabels[data.severity as string] || data.severity}\n`;
-        } else {
-          emailBody += `Severity: ${severityLabels[previousData?.severity || 'medium']}\n`;
-        }
-        
-        if (changes.includes('dueDate')) {
-          if (data.dueDate) {
-            emailBody += `Due date changed to: ${format(new Date(data.dueDate), 'MMM d, yyyy')}\n`;
-          } else {
-            emailBody += `Due date removed\n`;
+        // Only send email if there's a recipient
+        if (emailRecipient && emailRecipient.includes('@')) {
+          console.log(`[Bug Email] Sending email for bug ${bugId}:`, {
+            changes,
+            emailRecipient,
+            normalizedNewAssignedTo,
+            normalizedOldAssignedTo,
+          });
+          try {
+            // Build email body
+            let emailBody = `Hello,\n\n`;
+            
+            if (changes.includes('assignment')) {
+              if (normalizedOldAssignedTo) {
+                emailBody += `You have been reassigned to this bug.\n\n`;
+              } else {
+                emailBody += `You have been assigned to this bug.\n\n`;
+              }
+            }
+            
+            emailBody += `Bug: ${previousData?.title || 'Untitled Bug'}\n`;
+            emailBody += `Description: ${previousData?.description || 'No description'}\n\n`;
+            
+            if (changes.includes('status')) {
+              emailBody += `Status changed to: ${statusLabels[data.status as string] || data.status}\n`;
+            } else {
+              emailBody += `Status: ${statusLabels[previousData?.status || 'reported']}\n`;
+            }
+            
+            if (changes.includes('severity')) {
+              emailBody += `Severity changed to: ${severityLabels[data.severity as string] || data.severity}\n`;
+            } else {
+              emailBody += `Severity: ${severityLabels[previousData?.severity || 'medium']}\n`;
+            }
+            
+            if (changes.includes('dueDate')) {
+              if (data.dueDate) {
+                emailBody += `Due date changed to: ${format(new Date(data.dueDate), 'MMM d, yyyy')}\n`;
+              } else {
+                emailBody += `Due date removed\n`;
+              }
+            } else if (previousData?.dueDate) {
+              emailBody += `Due date: ${format(new Date(previousData.dueDate), 'MMM d, yyyy')}\n`;
+            }
+            
+            emailBody += `\n---\n`;
+            emailBody += `View this bug in the admin panel for more details.\n`;
+            
+            const subject = changes.includes('assignment') && !normalizedOldAssignedTo
+              ? `You've been assigned to: ${previousData?.title || 'Bug'}`
+              : `Update: ${previousData?.title || 'Bug'}`;
+            
+            await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, emailRecipient);
+            console.log(`[Bug Email] Email sent successfully to ${emailRecipient}`);
+          } catch (error) {
+            // Log error but don't fail the update
+            console.error('[Bug Email] Failed to send bug update email:', error);
+            console.error('[Bug Email] Error details:', {
+              bugId,
+              emailRecipient,
+              errorMessage: error instanceof Error ? error.message : String(error),
+              errorStack: error instanceof Error ? error.stack : undefined,
+            });
+            // Re-throw in development to help debug
+            if (process.env.NODE_ENV === 'development') {
+              throw error;
+            }
           }
-        } else if (previousData?.dueDate) {
-          emailBody += `Due date: ${format(new Date(previousData.dueDate), 'MMM d, yyyy')}\n`;
+        } else if (changes.includes('assignment')) {
+          // Log warning if assignment changed but no recipient
+          console.warn('[Bug Email] Assignment change detected but no assignee email found:', {
+            bugId,
+            changes,
+            normalizedNewAssignedTo,
+            normalizedOldAssignedTo,
+            dataAssignedTo: data.assignedTo,
+            previousDataAssignedTo: previousData?.assignedTo,
+          });
+        } else {
+          // Log if there are changes but no assignee
+          console.log('[Bug Email] Changes detected but no assignee to notify:', {
+            bugId,
+            changes,
+            normalizedNewAssignedTo,
+          });
         }
-        
-        emailBody += `\n---\n`;
-        emailBody += `View this bug in the admin panel for more details.\n`;
-        
-        const subject = changes.includes('assignment') && !oldAssignedTo
-          ? `You've been assigned to: ${previousData?.title || 'Bug'}`
-          : `Update: ${previousData?.title || 'Bug'}`;
-        
-        await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, newAssignedTo);
-      } catch (error) {
-        // Log error but don't fail the update
-        console.error('Failed to send bug update email:', error);
       }
     }
   }
@@ -185,7 +410,51 @@ export async function updateBug(
 
 export async function deleteBug(projectId: ProjectId, bugId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
-  return deleteDocument(projectId, 'bugs', bugId);
+  
+  // Only send emails for prepcenter-uae
+  const project = getProject(projectId);
+  const shouldSendEmails = project?.id === 'prepcenter-uae';
+  
+  // Get bug data before deleting (for email notification)
+  let bugData: Bug | null = null;
+  if (shouldSendEmails) {
+    bugData = await getDocumentData<Bug>(projectId, 'bugs', bugId);
+  }
+  
+  // Delete the bug
+  await deleteDocument(projectId, 'bugs', bugId);
+  
+  // Send email notification if bug had an assignee
+  if (shouldSendEmails && bugData && bugData.assignedTo && bugData.assignedTo.trim() && bugData.assignedTo.includes('@')) {
+    try {
+      console.log(`[Bug Email] Sending deletion email for bug ${bugId}:`, {
+        assignedTo: bugData.assignedTo,
+        title: bugData.title,
+      });
+      
+      const emailBody = `Hello,\n\n` +
+        `The bug you were assigned to has been deleted.\n\n` +
+        `Bug: ${bugData.title || 'Untitled Bug'}\n` +
+        `Description: ${bugData.description || 'No description'}\n\n` +
+        `---\n` +
+        `This bug has been removed from the system. If you have any questions, please contact the team.\n`;
+      
+      const subject = `Bug Deleted: ${bugData.title || 'Bug'}`;
+      
+      await sendBugUpdateEmail(projectId, bugId, subject, emailBody, token, bugData.assignedTo);
+      console.log(`[Bug Email] Deletion email sent successfully to ${bugData.assignedTo}`);
+    } catch (error) {
+      // Log error but don't fail the deletion
+      console.error('[Bug Email] Failed to send deletion email:', error);
+      console.error('[Bug Email] Error details:', {
+        bugId,
+        assignedTo: bugData.assignedTo,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+      // Don't re-throw - deletion already succeeded
+    }
+  }
 }
 
 export async function getBugsByStatus(
