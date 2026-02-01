@@ -31,10 +31,6 @@ yarn-error.log*
 # Firebase service account files (NEVER commit these!)
 **/*firebase-adminsdk*.json
 service-accounts/
-*.json
-!package.json
-!tsconfig.json
-!firestore.indexes.json
 
 # vercel
 .vercel
