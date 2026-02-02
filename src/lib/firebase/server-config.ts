@@ -226,40 +226,52 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
     // This works if both projects use the same Firebase project
     const adminServiceAccount = getServiceAccountConfig('admin');
     if (adminServiceAccount) {
-      console.warn(
-        `[${projectType}] Service account credentials not found, attempting to use admin service account as fallback. ` +
-        `For better isolation, set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
-      );
-      // Use the admin service account's project ID (they must be the same project for this to work)
-      const fallbackProjectId = adminServiceAccount.projectId;
-      try {
-        // Check if app already exists before initializing
+      // Check if the project IDs match (they must be the same project for this to work)
+      const requestedProjectId = projectId || '';
+      const adminProjectId = adminServiceAccount.projectId;
+      
+      // If project IDs match or if no specific project ID was requested, try the fallback
+      if (!requestedProjectId || requestedProjectId === adminProjectId) {
+        console.warn(
+          `[${projectType}] Service account credentials not found, attempting to use admin service account as fallback. ` +
+          `For better isolation, set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+        );
+        // Use the admin service account's project ID
+        const fallbackProjectId = adminProjectId;
         try {
-          app = getApp(appName);
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
-          }
-        } catch (error) {
-          // App doesn't exist, create it with admin credentials
-          // Note: This only works if prepcenter and admin use the same Firebase project
-          console.log(`[${projectType}] Initializing Firebase Admin app with admin service account fallback (project: ${fallbackProjectId})`);
-          app = initializeApp({
-            credential: cert({
+          // Check if app already exists before initializing
+          try {
+            app = getApp(appName);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
+            }
+          } catch (error) {
+            // App doesn't exist, create it with admin credentials
+            console.log(`[${projectType}] Initializing Firebase Admin app with admin service account fallback (project: ${fallbackProjectId})`);
+            app = initializeApp({
+              credential: cert({
+                projectId: fallbackProjectId,
+                privateKey: adminServiceAccount.privateKey,
+                clientEmail: adminServiceAccount.clientEmail,
+              }),
               projectId: fallbackProjectId,
-              privateKey: adminServiceAccount.privateKey,
-              clientEmail: adminServiceAccount.clientEmail,
-            }),
-            projectId: fallbackProjectId,
-          }, appName);
+            }, appName);
+          }
+          appCache.set(cacheKey, app);
+          console.log(`[${projectType}] Successfully initialized Firebase Admin app using admin service account fallback`);
+          return app;
+        } catch (fallbackError: any) {
+          console.error(`[${projectType}] Failed to use admin service account as fallback:`, fallbackError.message);
+          console.error(`[${projectType}] This usually means ${projectType} uses a different Firebase project than admin.`);
+          console.error(`[${projectType}] Please set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} with the correct service account JSON.`);
+          // Fall through to throw the original error
         }
-        appCache.set(cacheKey, app);
-        console.log(`[${projectType}] Successfully initialized Firebase Admin app using admin service account fallback`);
-        return app;
-      } catch (fallbackError: any) {
-        console.error(`[${projectType}] Failed to use admin service account as fallback:`, fallbackError.message);
-        console.error(`[${projectType}] This usually means ${projectType} uses a different Firebase project than admin.`);
-        console.error(`[${projectType}] Please set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} with the correct service account JSON.`);
-        // Fall through to throw the original error
+      } else {
+        console.warn(
+          `[${projectType}] Cannot use admin service account fallback: project IDs don't match. ` +
+          `Requested: ${requestedProjectId}, Admin: ${adminProjectId}. ` +
+          `Please set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} with the correct service account JSON.`
+        );
       }
     }
     
