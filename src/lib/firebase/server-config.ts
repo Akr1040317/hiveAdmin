@@ -218,18 +218,58 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
     console.log(`[${projectType}] Service account loaded: ${serviceAccount ? 'YES' : 'NO'}`);
   }
   
+  // Initialize app
+  let app: App;
+  
   if (!serviceAccount && projectType !== 'admin') {
+    // Try to use admin service account as fallback if available
+    const adminServiceAccount = getServiceAccountConfig('admin');
+    if (adminServiceAccount) {
+      console.warn(
+        `Service account credentials not found for ${projectType}, using admin service account as fallback. ` +
+        `For better isolation, set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+      );
+      // Use admin service account but with the project's project ID if available
+      const fallbackProjectId = projectId || adminServiceAccount.projectId;
+      try {
+        // Check if app already exists before initializing
+        try {
+          app = getApp(appName);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
+          }
+        } catch (error) {
+          // App doesn't exist, create it
+          app = initializeApp({
+            credential: cert({
+              projectId: fallbackProjectId,
+              privateKey: adminServiceAccount.privateKey,
+              clientEmail: adminServiceAccount.clientEmail,
+            }),
+            projectId: fallbackProjectId,
+          }, appName);
+        }
+        appCache.set(cacheKey, app);
+        return app;
+      } catch (fallbackError: any) {
+        console.error(`Failed to use admin service account as fallback:`, fallbackError.message);
+        // Fall through to throw the original error
+      }
+    }
+    
     // In production, if credentials aren't set, log warning but don't throw
     // This allows the app to work in limited mode
     if (process.env.NODE_ENV === 'production') {
-      console.warn(
-        `Service account credentials not found for ${projectType}. ` +
-        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables. ` +
-        `Some features may not work.`
+      const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
+      console.error(
+        `[${projectType}] Service account credentials not found. ` +
+        `Set ${envKey} in Vercel environment variables (Settings > Environment Variables). ` +
+        `If using the same Firebase project as admin, the admin service account will be used as fallback.`
       );
       throw new Error(
         `Service account credentials not found for ${projectType}. ` +
-        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+        `Set ${envKey} in Vercel environment variables. ` +
+        `If ${projectType} uses the same Firebase project as admin, ensure FIREBASE_SERVICE_ACCOUNT_ADMIN is set.`
       );
     }
     throw new Error(
@@ -238,9 +278,6 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
       `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()} environment variable.`
     );
   }
-  
-  // Initialize app
-  let app: App;
   
   if (projectType === 'admin') {
     // Admin project - use service account if available

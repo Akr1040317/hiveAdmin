@@ -56,32 +56,39 @@ export async function getGoals(
   period?: string,
   type?: 'monthly' | 'weekly'
 ): Promise<Goal[]> {
-  await requireAuth(token);
-  
-  let goals: Goal[];
-  
-  if (period && type) {
-    // Query by both period and type
-    goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
-      query.where('period', '==', period).where('type', '==', type)
-    );
-  } else if (period) {
-    // Query by period only
-    goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
-      query.where('period', '==', period)
-    );
-  } else if (type) {
-    // Query by type only
-    goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
-      query.where('type', '==', type)
-    );
-  } else {
-    // Get all goals
-    goals = await getCollectionData<Goal>(projectId, 'goals');
+  try {
+    await requireAuth(token);
+    
+    let goals: Goal[];
+    
+    if (period && type) {
+      // Query by both period and type
+      goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
+        query.where('period', '==', period).where('type', '==', type)
+      );
+    } else if (period) {
+      // Query by period only
+      goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
+        query.where('period', '==', period)
+      );
+    } else if (type) {
+      // Query by type only
+      goals = await queryCollection<Goal>(projectId, 'goals', (query) =>
+        query.where('type', '==', type)
+      );
+    } else {
+      // Get all goals
+      goals = await getCollectionData<Goal>(projectId, 'goals');
+    }
+    
+    // Recursively serialize all Date objects and non-serializable values
+    return serializeForClient(goals) as Goal[];
+  } catch (error: any) {
+    console.error('[getGoals] Error:', error.message);
+    console.error('[getGoals] Stack:', error.stack);
+    // Re-throw with more context
+    throw new Error(`Failed to get goals: ${error.message}`);
   }
-  
-  // Recursively serialize all Date objects and non-serializable values
-  return serializeForClient(goals) as Goal[];
 }
 
 export async function getGoal(projectId: ProjectId, goalId: string, token?: string | null): Promise<Goal | null> {
@@ -98,42 +105,49 @@ export async function createGoal(
   data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>,
   token?: string | null
 ): Promise<string> {
-  const user = await requireAuth(token);
-  
-  // Build goal data based on goal type, excluding undefined values
-  const goalData: any = {
-    title: data.title,
-    description: data.description,
-    type: data.type,
-    goalType: data.goalType,
-    period: data.period,
-    category: data.category || 'general',
-    createdBy: user.email || 'unknown',
-  };
-  
-  // Add optional linked entity fields
-  if (data.linkedEntityType) {
-    goalData.linkedEntityType = data.linkedEntityType;
-  }
-  if (data.linkedEntityId) {
-    goalData.linkedEntityId = data.linkedEntityId;
-  }
-  
-  // Add fields specific to goal type
-  if (data.goalType === 'numerical') {
-    goalData.targetValue = data.targetValue ?? 100;
-    goalData.currentValue = data.currentValue ?? 0;
-    if (data.unit) {
-      goalData.unit = data.unit;
+  try {
+    const user = await requireAuth(token);
+    
+    // Build goal data based on goal type, excluding undefined values
+    const goalData: any = {
+      title: data.title,
+      description: data.description,
+      type: data.type,
+      goalType: data.goalType,
+      period: data.period,
+      category: data.category || 'general',
+      createdBy: user.email || 'unknown',
+    };
+    
+    // Add optional linked entity fields
+    if (data.linkedEntityType) {
+      goalData.linkedEntityType = data.linkedEntityType;
     }
-  } else if (data.goalType === 'yesno') {
-    goalData.completed = data.completed ?? false;
-    if (data.completed && data.completedAt) {
-      goalData.completedAt = data.completedAt;
+    if (data.linkedEntityId) {
+      goalData.linkedEntityId = data.linkedEntityId;
     }
+    
+    // Add fields specific to goal type
+    if (data.goalType === 'numerical') {
+      goalData.targetValue = data.targetValue ?? 100;
+      goalData.currentValue = data.currentValue ?? 0;
+      if (data.unit) {
+        goalData.unit = data.unit;
+      }
+    } else if (data.goalType === 'yesno') {
+      goalData.completed = data.completed ?? false;
+      if (data.completed && data.completedAt) {
+        goalData.completedAt = data.completedAt;
+      }
+    }
+    
+    return await createDocument<Goal>(projectId, 'goals', goalData);
+  } catch (error: any) {
+    console.error('[createGoal] Error:', error.message);
+    console.error('[createGoal] Stack:', error.stack);
+    // Re-throw with more context
+    throw new Error(`Failed to create goal: ${error.message}`);
   }
-  
-  return createDocument<Goal>(projectId, 'goals', goalData);
 }
 
 export async function updateGoal(
@@ -142,40 +156,47 @@ export async function updateGoal(
   data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>>,
   token?: string | null
 ): Promise<void> {
-  await requireAuth(token);
-  
-  // Build update data, excluding undefined values
-  const updateData: any = {};
-  
-  // Copy defined fields
-  if (data.title !== undefined) updateData.title = data.title;
-  if (data.description !== undefined) updateData.description = data.description;
-  if (data.type !== undefined) updateData.type = data.type;
-  if (data.goalType !== undefined) updateData.goalType = data.goalType;
-  if (data.period !== undefined) updateData.period = data.period;
-  
-  // Handle numerical goal fields
-  if (data.targetValue !== undefined) updateData.targetValue = data.targetValue;
-  if (data.currentValue !== undefined) updateData.currentValue = data.currentValue;
-  if (data.unit !== undefined) updateData.unit = data.unit;
-  
-  // Handle yes/no goal fields
-  if (data.completed !== undefined) {
-    updateData.completed = data.completed;
-    if (data.completed === true) {
-      // If completing, set completedAt if not already set
-      const existingGoal = await getDocumentData<Goal>(projectId, 'goals', goalId);
-      if (existingGoal && !existingGoal.completedAt) {
-        updateData.completedAt = new Date();
-      } else if (data.completedAt !== undefined) {
-        updateData.completedAt = data.completedAt;
+  try {
+    await requireAuth(token);
+    
+    // Build update data, excluding undefined values
+    const updateData: any = {};
+    
+    // Copy defined fields
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.goalType !== undefined) updateData.goalType = data.goalType;
+    if (data.period !== undefined) updateData.period = data.period;
+    
+    // Handle numerical goal fields
+    if (data.targetValue !== undefined) updateData.targetValue = data.targetValue;
+    if (data.currentValue !== undefined) updateData.currentValue = data.currentValue;
+    if (data.unit !== undefined) updateData.unit = data.unit;
+    
+    // Handle yes/no goal fields
+    if (data.completed !== undefined) {
+      updateData.completed = data.completed;
+      if (data.completed === true) {
+        // If completing, set completedAt if not already set
+        const existingGoal = await getDocumentData<Goal>(projectId, 'goals', goalId);
+        if (existingGoal && !existingGoal.completedAt) {
+          updateData.completedAt = new Date();
+        } else if (data.completedAt !== undefined) {
+          updateData.completedAt = data.completedAt;
+        }
       }
+      // If uncompleting (completed === false), we don't include completedAt
+      // The field will remain in the document but won't affect functionality
     }
-    // If uncompleting (completed === false), we don't include completedAt
-    // The field will remain in the document but won't affect functionality
+    
+    return await updateDocument<Goal>(projectId, 'goals', goalId, updateData);
+  } catch (error: any) {
+    console.error('[updateGoal] Error:', error.message);
+    console.error('[updateGoal] Stack:', error.stack);
+    // Re-throw with more context
+    throw new Error(`Failed to update goal: ${error.message}`);
   }
-  
-  return updateDocument<Goal>(projectId, 'goals', goalId, updateData);
 }
 
 export async function deleteGoal(projectId: ProjectId, goalId: string, token?: string | null): Promise<void> {
