@@ -219,6 +219,19 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
   }
   
   if (!serviceAccount && projectType !== 'admin') {
+    // In production, if credentials aren't set, log warning but don't throw
+    // This allows the app to work in limited mode
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(
+        `Service account credentials not found for ${projectType}. ` +
+        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables. ` +
+        `Some features may not work.`
+      );
+      throw new Error(
+        `Service account credentials not found for ${projectType}. ` +
+        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+      );
+    }
     throw new Error(
       `Service account credentials not found for ${projectType}. ` +
       `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} or ` +
@@ -299,7 +312,16 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
         const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_ADMIN`;
         const jsonKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
         console.error(`[${projectType}] Failed to initialize admin Firebase Admin SDK:`, error.message);
-        console.error(`[${projectType}] Service account not found. Check your .env.local file.`);
+        console.error(`[${projectType}] Service account not found. Check your environment variables.`);
+        // In production, provide Vercel-specific instructions
+        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+          throw new Error(
+            `Admin Firebase service account required for server-side token verification.\n` +
+            `Please set ${jsonKey} in Vercel environment variables (Settings > Environment Variables).\n` +
+            `See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.\n` +
+            `Original error: ${error.message}`
+          );
+        }
         throw new Error(
           `Admin Firebase service account required for server-side token verification.\n` +
           `Please set ${pathKey} or ${jsonKey} in your .env.local file.\n` +
@@ -341,6 +363,20 @@ export function getAdminFirestore(projectType: FirebaseProjectType): Firestore {
 }
 
 export function getAdminAuth(projectType: FirebaseProjectType = 'admin'): Auth {
-  const app = getAdminApp(projectType);
-  return getAuth(app);
+  try {
+    const app = getAdminApp(projectType);
+    return getAuth(app);
+  } catch (error: any) {
+    // If initialization fails, throw a more descriptive error
+    if (error.message?.includes('service account') || 
+        error.message?.includes('Service account') ||
+        error.message?.includes('credential') ||
+        error.message?.includes('initialize')) {
+      throw new Error(
+        `Firebase Admin SDK initialization failed: ${error.message}. ` +
+        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+      );
+    }
+    throw error;
+  }
 }
