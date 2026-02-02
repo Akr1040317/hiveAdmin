@@ -42,7 +42,7 @@ export interface Bug {
 }
 
 export async function getBugs(projectId: ProjectId, token?: string | null): Promise<Bug[]> {
-  await requireAuth(token);
+  await requireAuth(token || undefined);
   const bugs = await getCollectionData<Bug>(projectId, 'bugs');
   
   // Recursively serialize all Date objects and non-serializable values

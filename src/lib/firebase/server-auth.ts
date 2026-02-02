@@ -6,7 +6,7 @@ import { getAdminAuth } from './server-config';
  * Gets token from Authorization header or accepts token parameter
  * Returns the decoded token if valid, null otherwise
  */
-export async function getServerAuth(token?: string) {
+export async function getServerAuth(token?: string | null) {
   try {
     let authToken = token;
     
@@ -47,7 +47,7 @@ export async function getServerAuth(token?: string) {
  * Check if user is authenticated and allowed
  * Accepts optional token parameter (for Server Actions)
  */
-export async function requireAuth(token?: string) {
+export async function requireAuth(token?: string | null) {
   if (!token) {
     throw new Error('Unauthorized: Authentication token required. Please sign in again.');
   }

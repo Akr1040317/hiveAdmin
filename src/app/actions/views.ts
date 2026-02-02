@@ -39,11 +39,7 @@ export async function createView(
 ): Promise<string> {
   await requireAuth(token);
   const now = new Date();
-  return createDocument<View>(projectId, COLLECTION_NAME, {
-    ...view,
-    createdAt: now,
-    updatedAt: now,
-  });
+  return createDocument<View>(projectId, COLLECTION_NAME, view);
 }
 
 export async function updateView(
@@ -53,10 +49,7 @@ export async function updateView(
   token?: string | null
 ): Promise<void> {
   await requireAuth(token);
-  return updateDocument<View>(projectId, COLLECTION_NAME, viewId, {
-    ...updates,
-    updatedAt: new Date(),
-  });
+  return updateDocument<View>(projectId, COLLECTION_NAME, viewId, updates);
 }
 
 export async function deleteView(projectId: ProjectId, viewId: string, token?: string | null): Promise<void> {

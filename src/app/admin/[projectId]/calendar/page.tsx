@@ -298,7 +298,15 @@ function CalendarItemsContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['calendar', 'table']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs 
+        availableViewTypes={['calendar', 'table']} 
+        onViewTypeChange={(viewType) => {
+          if (viewType !== 'tracker') {
+            switchViewType(viewType);
+          }
+        }} 
+        accent={accent} 
+      />
 
       <ViewToolbar
         searchValue={search}
@@ -402,7 +410,7 @@ function CalendarItemsContent() {
           />
         ) : (
           <TableView
-            data={filteredItems}
+            data={filteredItems as any}
             columns={tableColumns}
             sorts={sorts}
             onSortChange={(newSorts) => {
@@ -549,7 +557,7 @@ function CalendarItemsContent() {
         customContent={
           <div className="space-y-4 mt-4">
             {/* Attendees Section */}
-            {supportsAssignment(projectId) && (
+            {projectId && supportsAssignment(projectId) && (
               <div className="border-t border-border-subtle pt-4">
                 <AttendeeSelector
                   attendees={selectedItem?.attendees || newItemData.attendees || []}

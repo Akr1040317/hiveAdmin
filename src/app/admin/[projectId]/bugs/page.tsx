@@ -91,8 +91,10 @@ function BugsContent() {
       } else if (filter.operator === 'not_equals') {
         result = result.filter(bug => (bug as any)[filter.field] !== filter.value);
       } else if (filter.operator === 'contains') {
-        const val = String((bug as any)[filter.field] || '').toLowerCase();
-        result = result.filter(bug => val.includes(String(filter.value).toLowerCase()));
+        result = result.filter((bug: Bug) => {
+          const val = String((bug as any)[filter.field] || '').toLowerCase();
+          return val.includes(String(filter.value).toLowerCase());
+        });
       }
     });
 
@@ -188,7 +190,7 @@ function BugsContent() {
       return;
     }
     
-    const bug = bugs.find(b => b.id === bugId);
+    const bug = bugs.find((b: Bug) => b.id === bugId);
     if (!bug) {
       console.error('Bug not found:', bugId);
       return;
@@ -512,11 +514,11 @@ ${bug.notes}
         );
       },
     },
-    ...(supportsAssignment(projectId) ? [{
+    ...(projectId && supportsAssignment(projectId) ? [{
       key: 'assignedTo',
       header: 'ASSIGNED TO',
       sortable: true,
-      render: (bug) => (
+      render: (bug: Bug) => (
         <span className="text-xs text-gray-400">
           {bug.assignedTo ? bug.assignedTo.split('@')[0] : 'Unassigned'}
         </span>
@@ -646,7 +648,11 @@ ${bug.notes}
       {/* View Tabs */}
       <ViewTabs
         availableViewTypes={['table', 'board', 'calendar']}
-        onViewTypeChange={switchViewType}
+        onViewTypeChange={(viewType) => {
+          if (viewType !== 'tracker') {
+            switchViewType(viewType);
+          }
+        }}
         accent={accent}
       />
 
@@ -747,14 +753,18 @@ ${bug.notes}
               }
               // Handle bugs
               const bug = item as Bug;
+              const severity = bug.severity || 'medium';
+              const severityVariant = (severity === 'critical' || severity === 'high' || severity === 'medium' || severity === 'low')
+                ? severity as 'critical' | 'high' | 'medium' | 'low'
+                : 'medium' as const;
               const badges = [
                 { 
-                  label: bug.severity.charAt(0).toUpperCase() + bug.severity.slice(1), 
-                  variant: bug.severity as 'critical' | 'high' | 'medium' | 'low'
+                  label: severity.charAt(0).toUpperCase() + severity.slice(1), 
+                  variant: severityVariant
                 },
                 { 
                   label: bug.platform.toUpperCase(), 
-                  variant: 'secondary' 
+                  variant: 'secondary' as const
                 },
               ];
               
@@ -762,8 +772,7 @@ ${bug.notes}
               if (bug.convertedFromReportId) {
                 badges.push({
                   label: 'FROM REPORT',
-                  variant: 'secondary',
-                  color: 'orange',
+                  variant: 'secondary' as const,
                 });
               }
               
@@ -1041,14 +1050,14 @@ ${bug.notes}
           const updated = await loadBugs(projectId);
           if (updated) {
             setBugs(updated);
-            const updatedBug = updated.find(b => b.id === selectedBug.id);
+            const updatedBug = updated.find((b: Bug) => b.id === selectedBug.id);
             if (updatedBug) setSelectedBug(updatedBug);
           }
         } : undefined}
         lastEmailSent={selectedBug?.lastEmailSent}
         lastEmailSubject={selectedBug?.lastEmailSubject}
         assignedTo={selectedBug?.assignedTo || newBugData.assignedTo || null}
-        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        teamMembers={projectId && supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedBug) {
             handleUpdate({ assignedTo: email || undefined });
@@ -1056,7 +1065,7 @@ ${bug.notes}
             setNewBugData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
-        showAssignment={supportsAssignment(projectId)}
+        showAssignment={projectId ? supportsAssignment(projectId) : false}
         accent={accent}
       />
     </div>
