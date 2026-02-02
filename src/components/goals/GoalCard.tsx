@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -33,18 +33,16 @@ export function GoalCard({
   isPast = false,
   isFuture = false,
 }: GoalCardProps) {
-  const [isEditingProgress, setIsEditingProgress] = useState(false);
   const [progressValue, setProgressValue] = useState(
     goal.goalType === 'numerical' ? String(goal.currentValue || 0) : ''
   );
 
-  const handleProgressUpdate = () => {
-    if (goal.goalType === 'numerical' && onUpdateProgress) {
-      const value = parseFloat(progressValue) || 0;
-      onUpdateProgress(goal.id, value);
-      setIsEditingProgress(false);
+  // Update local state when goal changes
+  useEffect(() => {
+    if (goal.goalType === 'numerical') {
+      setProgressValue(String(goal.currentValue || 0));
     }
-  };
+  }, [goal.currentValue, goal.goalType]);
 
   const handleToggleComplete = () => {
     if (goal.goalType === 'yesno' && onToggleComplete) {
@@ -116,55 +114,89 @@ export function GoalCard({
                 
                 {goal.goalType === 'numerical' && (
                   <div className="mt-3">
-                    {isEditingProgress ? (
-                      <div className="flex items-center gap-2">
+                    <GoalProgressBar
+                      currentValue={goal.currentValue || 0}
+                      targetValue={goal.targetValue || 0}
+                      unit={goal.unit}
+                      showIcon={true}
+                    />
+                    
+                    {/* Inline progress editor */}
+                    {onUpdateProgress && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const current = goal.currentValue || 0;
+                            const newValue = Math.max(0, current - 1);
+                            onUpdateProgress(goal.id, newValue);
+                          }}
+                          className={cn(
+                            'flex-shrink-0 w-7 h-7 rounded border flex items-center justify-center',
+                            'bg-background-card border-border-subtle hover:border-gray-600',
+                            'text-gray-400 hover:text-gray-300 transition-colors',
+                            'text-sm font-semibold'
+                          )}
+                        >
+                          −
+                        </button>
+                        
                         <Input
                           type="number"
                           value={progressValue}
-                          onChange={(e) => setProgressValue(e.target.value)}
-                          className="h-7 text-xs"
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const numVal = parseFloat(val);
+                            if (val === '' || (!isNaN(numVal) && numVal >= 0)) {
+                              setProgressValue(val);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const maxVal = goal.targetValue || 0;
+                            const finalVal = Math.min(maxVal, Math.max(0, val));
+                            if (finalVal !== (goal.currentValue || 0)) {
+                              onUpdateProgress(goal.id, finalVal);
+                            } else {
+                              setProgressValue(String(goal.currentValue || 0));
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          className={cn(
+                            'h-7 text-sm font-medium text-center tabular-nums flex-1 min-w-0',
+                            'text-gray-50 bg-background-card border-border-subtle',
+                            'focus:ring-1 focus:ring-offset-0'
+                          )}
                           min={0}
                           max={goal.targetValue}
                           accent={accent}
-                          autoFocus
                         />
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={handleProgressUpdate}
-                          className="h-7 px-2 text-xs"
-                          accent={accent}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
+                        
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          {goal.unit || ''}
+                        </span>
+                        
+                        <button
+                          type="button"
                           onClick={() => {
-                            setIsEditingProgress(false);
-                            setProgressValue(String(goal.currentValue || 0));
+                            const current = goal.currentValue || 0;
+                            const maxVal = goal.targetValue || 0;
+                            const newValue = Math.min(maxVal, current + 1);
+                            onUpdateProgress(goal.id, newValue);
                           }}
-                          className="h-7 px-2 text-xs"
+                          className={cn(
+                            'flex-shrink-0 w-7 h-7 rounded border flex items-center justify-center',
+                            'bg-background-card border-border-subtle hover:border-gray-600',
+                            'text-gray-400 hover:text-gray-300 transition-colors',
+                            'text-sm font-semibold'
+                          )}
                         >
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <div>
-                        <GoalProgressBar
-                          currentValue={goal.currentValue || 0}
-                          targetValue={goal.targetValue || 0}
-                          unit={goal.unit}
-                          showIcon={true}
-                        />
-                        {onUpdateProgress && (
-                          <button
-                            onClick={() => setIsEditingProgress(true)}
-                            className="text-xs text-gray-500 hover:text-gray-400 mt-2 transition-colors"
-                          >
-                            Update progress →
-                          </button>
-                        )}
+                          +
+                        </button>
                       </div>
                     )}
                   </div>
