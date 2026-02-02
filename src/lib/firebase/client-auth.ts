@@ -5,6 +5,9 @@ import { User } from 'firebase/auth';
  * Get the current user's ID token for server actions
  */
 export async function getIdToken(): Promise<string | null> {
+  if (!auth) {
+    return null;
+  }
   const user = auth.currentUser;
   if (!user) {
     return null;
@@ -22,5 +25,8 @@ export async function getIdToken(): Promise<string | null> {
  * Get the current user
  */
 export function getCurrentUser(): User | null {
+  if (!auth) {
+    return null;
+  }
   return auth.currentUser;
 }

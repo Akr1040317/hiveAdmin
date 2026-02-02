@@ -188,7 +188,7 @@ export function BoardView<T extends { id: string }>({
               }
             }}
             onAddCard={() => onAddCard?.(column.status)}
-            accent={accent}
+            accent={typeof accent === 'boolean' ? accent : !!accent}
             dragOverColumn={dragOverColumn}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}

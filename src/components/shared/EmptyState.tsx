@@ -38,7 +38,7 @@ export function EmptyState({
       {onAction && (
         <Button
           size="sm"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
           onClick={onAction}
           variant="primary"
         >

@@ -185,17 +185,19 @@ function ContentContent() {
     }
   };
 
-  const handleCardMove = async (contentId: string, newStatus: Content['status']) => {
+  const handleCardMove = async (contentId: string, newStatus: string) => {
     if (!projectId) return;
+    
+    const status = newStatus as Content['status'];
     
     // Validate verification before allowing scheduled/sent
     const contentItem = content.find(c => c.id === contentId);
-    if ((newStatus === 'scheduled' || newStatus === 'sent') && contentItem?.status !== 'verified') {
+    if ((status === 'scheduled' || status === 'sent') && contentItem?.status !== 'verified') {
       alert('Content must be verified before it can be scheduled or sent. Please verify the content first.');
       return;
     }
     
-    await handleUpdateContent(projectId, contentId, { status: newStatus });
+    await handleUpdateContent(projectId, contentId, { status });
     const updated = await loadContent(projectId);
     if (updated) setContent(updated);
   };
@@ -336,7 +338,7 @@ function ContentContent() {
       key: 'assignedTo',
       header: 'ASSIGNED TO',
       sortable: true,
-      render: (c) => (
+      render: (c: Content) => (
         <span className="text-xs text-gray-400">
           {c.assignedTo ? c.assignedTo.split('@')[0] : 'Unassigned'}
         </span>
@@ -400,7 +402,7 @@ function ContentContent() {
           setSelectedContent(null);
           setIsDrawerOpen(true);
         }}
-        viewType={viewType}
+        viewType={viewType === 'tracker' ? undefined : viewType}
         accent={accent}
       />
 

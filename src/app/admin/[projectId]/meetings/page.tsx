@@ -214,7 +214,11 @@ function MeetingsContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['table', 'calendar']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs availableViewTypes={['table', 'calendar']} onViewTypeChange={(vt) => {
+        if (vt !== 'tracker') {
+          switchViewType(vt);
+        }
+      }} accent={accent} />
 
       <ViewToolbar
         searchValue={search}
@@ -440,7 +444,7 @@ function MeetingsContent() {
         customContent={
           <div className="space-y-4 mt-4">
             {/* Attendees Section */}
-            {supportsAssignment(projectId) && (
+            {projectId && supportsAssignment(projectId) && (
               <div className="border-t border-border-subtle pt-4">
                 <AttendeeSelector
                   attendees={selectedMeeting?.attendees || newMeetingData.attendees || []}
@@ -494,7 +498,7 @@ function MeetingsContent() {
             </div>
 
             {/* Action Buttons */}
-            {selectedMeeting && supportsAssignment(projectId) && (
+            {selectedMeeting && projectId && supportsAssignment(projectId) && (
               <div className="border-t border-border-subtle pt-4 flex gap-2">
                 <Button
                   type="button"

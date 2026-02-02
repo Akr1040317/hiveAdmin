@@ -17,7 +17,7 @@ export function ProjectProvider({
   projectId: ProjectId;
   children: ReactNode;
 }) {
-  const project = getProject(projectId);
+  const project = getProject(projectId) ?? null;
 
   return (
     <ProjectContext.Provider value={{ project, projectId }}>

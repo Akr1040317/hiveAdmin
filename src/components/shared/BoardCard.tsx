@@ -169,7 +169,7 @@ export function BoardCard({
                 <Button
                   size="sm"
                   variant="primary"
-                  accent={accent}
+                  accent={typeof accent === 'boolean' ? accent : !!accent}
                   onClick={(e) => {
                     e.stopPropagation();
                     onConvert();

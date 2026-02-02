@@ -69,7 +69,7 @@ export function SortBuilder({ sorts, availableFields, onChange, accent }: SortBu
                 value={sort.field}
                 onChange={(e) => updateSort(index, { field: e.target.value })}
                 className="flex-1 h-7 text-xs"
-                accent={accent}
+                accent={typeof accent === 'boolean' ? accent : !!accent}
               >
                 {availableFields.map(field => (
                   <option key={field.value} value={field.value}>{field.label}</option>

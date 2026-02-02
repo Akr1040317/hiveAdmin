@@ -29,9 +29,7 @@ const statusColors: Record<string, { variant: 'default' | 'success' | 'warning' 
   scheduled: { variant: 'accent' },
   sent: { variant: 'success' },
   
-  // Calendar statuses
-  planned: { variant: 'default' },
-  scheduled: { variant: 'accent' },
+  // Calendar statuses (using same as feature for planned/scheduled, adding completed)
   completed: { variant: 'success' },
 };
 

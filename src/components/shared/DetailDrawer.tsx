@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import * as Dialog from '@radix-ui/react-dialog';
 import { format } from 'date-fns';
 
-interface PropertyField {
+export interface PropertyField {
   key: string;
   label: string;
   type: 'text' | 'select' | 'multiselect' | 'date' | 'number';
@@ -213,7 +213,7 @@ export function DetailDrawer({
                   }}
                   autoFocus
                   className="text-base font-medium"
-                  accent={accent}
+                  accent={typeof accent === 'boolean' ? accent : !!accent}
                 />
               ) : (
                 <h2
@@ -295,7 +295,7 @@ export function DetailDrawer({
                           value={assignedTo || ''}
                           onChange={(e) => onAssignedToChange(e.target.value || null)}
                           className="h-8 text-sm"
-                          accent={accent}
+                          accent={typeof accent === 'boolean' ? accent : !!accent}
                         >
                           <option value="">Unassigned</option>
                           {teamMembers.map((email) => (
@@ -318,7 +318,7 @@ export function DetailDrawer({
                             value={prop.value || ''}
                             onChange={(e) => prop.onChange(e.target.value)}
                             className="h-8 text-sm"
-                            accent={accent}
+                            accent={typeof accent === 'boolean' ? accent : !!accent}
                           >
                             {prop.options?.map((opt) => (
                               <option key={opt.value} value={opt.value}>
@@ -359,7 +359,7 @@ export function DetailDrawer({
                             value={prop.value ? format(new Date(prop.value), 'yyyy-MM-dd') : ''}
                             onChange={(e) => prop.onChange(e.target.value ? new Date(e.target.value) : null)}
                             className="h-8 text-sm"
-                            accent={accent}
+                            accent={typeof accent === 'boolean' ? accent : !!accent}
                           />
                         ) : prop.type === 'number' ? (
                           <Input
@@ -367,14 +367,14 @@ export function DetailDrawer({
                             value={prop.value || ''}
                             onChange={(e) => prop.onChange(Number(e.target.value))}
                             className="h-8 text-sm"
-                            accent={accent}
+                            accent={typeof accent === 'boolean' ? accent : !!accent}
                           />
                         ) : (
                           <Input
                             value={prop.value || ''}
                             onChange={(e) => prop.onChange(e.target.value)}
                             className="h-8 text-sm"
-                            accent={accent}
+                            accent={typeof accent === 'boolean' ? accent : !!accent}
                           />
                         )}
                       </div>
@@ -438,7 +438,7 @@ export function DetailDrawer({
                         value={reporterEmail}
                         disabled
                         className="h-7 text-sm opacity-60"
-                        accent={accent}
+                        accent={typeof accent === 'boolean' ? accent : !!accent}
                       />
                     </div>
                     <div>
@@ -449,7 +449,7 @@ export function DetailDrawer({
                         onChange={(e) => setEmailSubject(e.target.value)}
                         className="h-7 text-sm"
                         placeholder="Email subject..."
-                        accent={accent}
+                        accent={typeof accent === 'boolean' ? accent : !!accent}
                       />
                     </div>
                     <div>
@@ -497,7 +497,7 @@ export function DetailDrawer({
                         variant="primary"
                         onClick={handleSendEmail}
                         disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
-                        accent={accent}
+                        accent={typeof accent === 'boolean' ? accent : !!accent}
                         className="text-xs h-7 px-2 ml-auto"
                       >
                         {sendingEmail ? (
@@ -586,7 +586,7 @@ export function DetailDrawer({
                 <Button
                   size="sm"
                   variant="primary"
-                  accent={accent}
+                  accent={typeof accent === 'boolean' ? accent : !!accent}
                   onClick={onSave}
                   className="ml-auto"
                 >

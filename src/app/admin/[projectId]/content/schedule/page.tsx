@@ -59,7 +59,7 @@ export default function SchedulePage() {
             tips_tricks: null,
             word_of_the_day: null,
           };
-          data.forEach((schedule) => {
+          data.forEach((schedule: ContentSchedule) => {
             scheduleMap[schedule.contentType] = schedule;
           });
           setSchedules(scheduleMap);
@@ -93,7 +93,7 @@ export default function SchedulePage() {
           tips_tricks: null,
           word_of_the_day: null,
         };
-        updated.forEach((schedule) => {
+        updated.forEach((schedule: ContentSchedule) => {
           scheduleMap[schedule.contentType] = schedule;
         });
         setSchedules(scheduleMap);

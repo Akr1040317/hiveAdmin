@@ -48,6 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Then check Firestore (if available and user is authenticated)
+      if (!db) {
+        return false;
+      }
       try {
         const allowlistDoc = await getDoc(doc(db, 'config', 'allowlist'));
         if (allowlistDoc.exists()) {

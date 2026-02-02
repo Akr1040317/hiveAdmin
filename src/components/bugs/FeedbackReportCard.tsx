@@ -86,7 +86,7 @@ export function FeedbackReportCard({ report, onConvert, converting = false, acce
         <Button
           size="sm"
           variant="primary"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
           onClick={() => onConvert(report.id)}
           disabled={converting}
           className="shrink-0"

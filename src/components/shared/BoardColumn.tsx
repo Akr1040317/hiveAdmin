@@ -145,7 +145,7 @@ export function BoardColumn({
             updatedAt={card.updatedAt}
             userId={card.userId}
             onClick={() => onCardClick?.(card.id)}
-            accent={accent}
+            accent={typeof accent === 'boolean' ? accent : !!accent}
             draggable={card.draggable !== false}
             onDragStart={onDragStart && card.item ? (e) => onDragStart(e, card.item) : undefined}
             onDragEnd={onDragEnd}

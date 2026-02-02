@@ -18,7 +18,7 @@ interface ViewToolbarProps {
   onFiltersChange: (filters: Filter[]) => void;
   sorts: Sort[];
   onSortsChange: (sorts: Sort[]) => void;
-  availableFields: { value: string; label: string; type?: 'text' | 'select' | 'date' | 'number' }[];
+  availableFields: { value: string; label: string; type: 'text' | 'select' | 'date' | 'number' }[];
   visibleColumns?: string[];
   onColumnsChange?: (columns: string[]) => void;
   onNew?: () => void;
@@ -85,7 +85,7 @@ export function ViewToolbar({
           onChange={(e) => setDebouncedSearch(e.target.value)}
           placeholder="Search..."
           className="pl-8 h-8 text-sm"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
         />
       </div>
 
@@ -124,7 +124,7 @@ export function ViewToolbar({
                   setFilterOpen(false);
                 }
               }}
-              accent={accent}
+              accent={typeof accent === 'boolean' ? accent : !!accent}
             />
             <Popover.Arrow className="fill-background-card" />
           </Popover.Content>
@@ -166,7 +166,7 @@ export function ViewToolbar({
                   setSortOpen(false);
                 }
               }}
-              accent={accent}
+              accent={typeof accent === 'boolean' ? accent : !!accent}
             />
             <Popover.Arrow className="fill-background-card" />
           </Popover.Content>
@@ -271,7 +271,7 @@ export function ViewToolbar({
         <Button
           size="sm"
           variant="primary"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
           onClick={onNew}
           className="h-8 gap-1.5 ml-auto"
         >

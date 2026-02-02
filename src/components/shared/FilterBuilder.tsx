@@ -96,7 +96,7 @@ export function FilterBuilder({ filters, availableFields, onChange, accent }: Fi
                   value={filter.field}
                   onChange={(e) => updateFilter(filter.id, { field: e.target.value, operator: 'equals', value: '' })}
                   className="flex-1 h-7 text-xs"
-                  accent={accent}
+                  accent={typeof accent === 'boolean' ? accent : !!accent}
                 >
                   {availableFields.map(field => (
                     <option key={field.value} value={field.value}>{field.label}</option>
@@ -107,7 +107,7 @@ export function FilterBuilder({ filters, availableFields, onChange, accent }: Fi
                   value={filter.operator}
                   onChange={(e) => updateFilter(filter.id, { operator: e.target.value as FilterOperator })}
                   className="w-32 h-7 text-xs"
-                  accent={accent}
+                  accent={typeof accent === 'boolean' ? accent : !!accent}
                 >
                   {availableOps.map(op => (
                     <option key={op.value} value={op.value}>{op.label}</option>
@@ -120,7 +120,7 @@ export function FilterBuilder({ filters, availableFields, onChange, accent }: Fi
                       value={filter.value || ''}
                       onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
                       className="flex-1 h-7 text-xs"
-                      accent={accent}
+                      accent={typeof accent === 'boolean' ? accent : !!accent}
                     >
                       <option value="">Select value...</option>
                       {getFieldOptions(filter.field).map((opt: any) => (
@@ -133,7 +133,7 @@ export function FilterBuilder({ filters, availableFields, onChange, accent }: Fi
                       value={filter.value || ''}
                       onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
                       className="flex-1 h-7 text-xs"
-                      accent={accent}
+                      accent={typeof accent === 'boolean' ? accent : !!accent}
                     />
                   ) : (
                     <Input
@@ -141,7 +141,7 @@ export function FilterBuilder({ filters, availableFields, onChange, accent }: Fi
                       onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
                       placeholder="Value..."
                       className="flex-1 h-7 text-xs"
-                      accent={accent}
+                      accent={typeof accent === 'boolean' ? accent : !!accent}
                     />
                   )
                 )}

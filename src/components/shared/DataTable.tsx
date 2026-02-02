@@ -75,7 +75,7 @@ export function DataTable<T extends { id: string }>({
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              accent={accent}
+              accent={typeof accent === 'boolean' ? accent : !!accent}
             />
           </div>
         )}
@@ -84,7 +84,7 @@ export function DataTable<T extends { id: string }>({
             <Select
               value={filter.value || ''}
               onChange={(e) => filter.onChange(e.target.value)}
-              accent={accent}
+              accent={typeof accent === 'boolean' ? accent : !!accent}
             >
               <option value="">All {filter.label}</option>
               {filter.options.map((option) => (

@@ -87,10 +87,10 @@ export function AttendeeSelector({
           <div className="flex gap-2">
             <Select
               value={selectedTeamMember}
-              onValueChange={setSelectedTeamMember}
-              placeholder="Select team member..."
+              onChange={(e) => setSelectedTeamMember(e.target.value)}
               className="flex-1"
             >
+              <option value="" disabled>Select team member...</option>
               {teamMembers
                 .filter(email => !attendees.includes(email))
                 .map((email) => (

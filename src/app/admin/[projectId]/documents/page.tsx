@@ -46,8 +46,8 @@ function DocumentsContent() {
       const searchLower = search.toLowerCase();
       result = result.filter(d => 
         d.title.toLowerCase().includes(searchLower) ||
-        d.notes.toLowerCase().includes(searchLower) ||
-        d.url.toLowerCase().includes(searchLower)
+        (d.notes && d.notes.toLowerCase().includes(searchLower)) ||
+        (d.url && d.url.toLowerCase().includes(searchLower))
       );
     }
     filters.forEach(filter => {
@@ -205,7 +205,11 @@ function DocumentsContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['table']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs availableViewTypes={['table']} onViewTypeChange={(vt) => {
+        if (vt !== 'tracker') {
+          switchViewType(vt);
+        }
+      }} accent={accent} />
 
       <ViewToolbar
         searchValue={search}

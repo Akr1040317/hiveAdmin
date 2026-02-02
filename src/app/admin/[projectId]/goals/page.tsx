@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge';
 import { GoalCard } from '@/components/goals/GoalCard';
 import { PeriodNavigator } from '@/components/goals/PeriodNavigator';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
+import type { PropertyField } from '@/components/shared/DetailDrawer';
 import {
   getCurrentMonthPeriod,
   getCurrentWeekPeriod,
@@ -553,7 +554,7 @@ function GoalsContent() {
           {
             key: 'category',
             label: 'Category',
-            type: 'select',
+            type: 'select' as const,
             value: selectedGoal?.category || newGoalData.category || 'general',
             options: Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
               value,
@@ -570,7 +571,7 @@ function GoalsContent() {
           {
             key: 'goalType',
             label: 'Goal Type',
-            type: 'select',
+            type: 'select' as const,
             value: selectedGoal?.goalType || newGoalData.goalType || 'numerical',
             options: goalTypeOptions,
             onChange: (value) => {
@@ -584,7 +585,7 @@ function GoalsContent() {
           {
             key: 'type',
             label: 'Period Type',
-            type: 'select',
+            type: 'select' as const,
             value: selectedGoal?.type || newGoalData.type || activeTab,
             options: [
               { value: 'monthly', label: 'Monthly' },
@@ -599,11 +600,11 @@ function GoalsContent() {
               }
             },
           },
-          ...(selectedGoal?.goalType === 'numerical' || newGoalData.goalType === 'numerical' ? [
+          ...((selectedGoal?.goalType === 'numerical' || newGoalData.goalType === 'numerical' ? [
             {
               key: 'targetValue',
               label: 'Target Value',
-              type: 'number',
+              type: 'number' as const,
               value: selectedGoal?.targetValue || newGoalData.targetValue || 100,
               onChange: (value) => {
                 const numValue = typeof value === 'number' ? value : (parseFloat(String(value)) || 100);
@@ -617,7 +618,7 @@ function GoalsContent() {
             {
               key: 'currentValue',
               label: 'Current Value',
-              type: 'number',
+              type: 'number' as const,
               value: selectedGoal?.currentValue || newGoalData.currentValue || 0,
               onChange: (value) => {
                 const numValue = typeof value === 'number' ? value : (parseFloat(String(value)) || 0);
@@ -631,7 +632,7 @@ function GoalsContent() {
             {
               key: 'unit',
               label: 'Unit (optional)',
-              type: 'text',
+              type: 'text' as const,
               value: selectedGoal?.unit || newGoalData.unit || '',
               onChange: (value) => {
                 if (selectedGoal) {
@@ -641,7 +642,7 @@ function GoalsContent() {
                 }
               },
             },
-          ] : []),
+          ] : []) as PropertyField[]),
         ]}
         bodyFields={[
           {

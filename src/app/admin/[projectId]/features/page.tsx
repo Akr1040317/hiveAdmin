@@ -135,9 +135,10 @@ function FeaturesContent() {
     }
   };
 
-  const handleCardMove = async (featureId: string, newStatus: Feature['status']) => {
+  const handleCardMove = async (featureId: string, newStatus: string) => {
     if (!projectId) return;
-    await handleUpdateFeature(projectId, featureId, { status: newStatus });
+    const status = newStatus as Feature['status'];
+    await handleUpdateFeature(projectId, featureId, { status });
     const updated = await loadFeatures(projectId);
     if (updated) setFeatures(updated);
   };
@@ -204,11 +205,11 @@ function FeaturesContent() {
         return <Badge className={cn('text-xs capitalize', colors[f.priority])}>{f.priority}</Badge>;
       },
     },
-    ...(supportsAssignment(projectId) ? [{
+    ...(projectId && supportsAssignment(projectId) ? [{
       key: 'assignedTo',
       header: 'ASSIGNED TO',
       sortable: true,
-      render: (f) => (
+      render: (f: Feature) => (
         <span className="text-xs text-gray-400">
           {f.assignedTo ? f.assignedTo.split('@')[0] : 'Unassigned'}
         </span>
@@ -262,7 +263,11 @@ function FeaturesContent() {
         </div>
       </div>
 
-      <ViewTabs availableViewTypes={['table', 'board', 'calendar']} onViewTypeChange={switchViewType} accent={accent} />
+      <ViewTabs availableViewTypes={['table', 'board', 'calendar']} onViewTypeChange={(vt) => {
+        if (vt !== 'tracker') {
+          switchViewType(vt);
+        }
+      }} accent={accent} />
 
       <ViewToolbar
         searchValue={search}
@@ -515,7 +520,7 @@ function FeaturesContent() {
         }}
         onDelete={selectedFeature ? handleDelete : undefined}
         assignedTo={selectedFeature?.assignedTo || newFeatureData.assignedTo || null}
-        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        teamMembers={projectId && supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedFeature) {
             handleUpdate({ assignedTo: email || undefined });
@@ -523,7 +528,7 @@ function FeaturesContent() {
             setNewFeatureData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
-        showAssignment={supportsAssignment(projectId)}
+        showAssignment={projectId ? supportsAssignment(projectId) : false}
         accent={accent}
       />
     </div>

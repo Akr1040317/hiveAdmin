@@ -62,7 +62,7 @@ export function GoalCard({
       'hover:border-border transition-all duration-200 relative overflow-hidden',
       opacityClass,
       isComplete && !isPast && 'ring-1 ring-green-500/20'
-    )} accent={accent}>
+    )} accent={typeof accent === 'boolean' ? accent : !!accent}>
       {/* Completion indicator stripe */}
       {isComplete && !isPast && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-green-500/40 via-emerald-500/40 to-green-500/40" />
@@ -173,7 +173,7 @@ export function GoalCard({
                           )}
                           min={0}
                           max={goal.targetValue}
-                          accent={accent}
+                          accent={typeof accent === 'boolean' ? accent : !!accent}
                         />
                         
                         <span className="text-xs text-gray-500 flex-shrink-0">

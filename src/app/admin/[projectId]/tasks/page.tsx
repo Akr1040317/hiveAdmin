@@ -72,8 +72,10 @@ function TasksContent() {
       } else if (filter.operator === 'not_equals') {
         result = result.filter(task => (task as any)[filter.field] !== filter.value);
       } else if (filter.operator === 'contains') {
-        const val = String((task as any)[filter.field] || '').toLowerCase();
-        result = result.filter(task => val.includes(String(filter.value).toLowerCase()));
+        result = result.filter(task => {
+          const val = String((task as any)[filter.field] || '').toLowerCase();
+          return val.includes(String(filter.value).toLowerCase());
+        });
       }
     });
 
@@ -148,7 +150,8 @@ function TasksContent() {
     }
   };
 
-  const handleCardMove = async (taskId: string, newStatus: Task['status']) => {
+  const handleCardMove = async (taskId: string, newStatus: string) => {
+    const status = newStatus as Task['status'];
     if (!projectId) {
       console.warn('No projectId, cannot move card');
       return;
@@ -171,8 +174,8 @@ function TasksContent() {
     // Optimistically update the UI immediately
     const previousTasks = [...tasks];
     setTasks(prevTasks => 
-      prevTasks.map(t => 
-        t.id === taskId ? { ...t, status: newStatus } : t
+      prevTasks.map(t =>
+        t.id === taskId ? { ...t, status } : t
       )
     );
     
@@ -296,11 +299,11 @@ function TasksContent() {
         );
       },
     },
-    ...(supportsAssignment(projectId) ? [{
+    ...(projectId && supportsAssignment(projectId) ? [{
       key: 'assignedTo',
       header: 'ASSIGNED TO',
       sortable: true,
-      render: (task) => (
+      render: (task: Task) => (
         <span className="text-xs text-gray-400">
           {task.assignedTo ? task.assignedTo.split('@')[0] : 'Unassigned'}
         </span>
@@ -400,7 +403,11 @@ function TasksContent() {
       {/* View Tabs */}
       <ViewTabs
         availableViewTypes={['table', 'board', 'calendar']}
-        onViewTypeChange={switchViewType}
+        onViewTypeChange={(vt) => {
+          if (vt !== 'tracker') {
+            switchViewType(vt);
+          }
+        }}
         accent={accent}
       />
 
@@ -653,7 +660,7 @@ function TasksContent() {
         }}
         onDelete={selectedTask ? handleDelete : undefined}
         assignedTo={selectedTask?.assignedTo || newTaskData.assignedTo || null}
-        teamMembers={supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
+        teamMembers={projectId && supportsAssignment(projectId) ? getTeamMembers(projectId) : []}
         onAssignedToChange={(email) => {
           if (selectedTask) {
             handleUpdate({ assignedTo: email || undefined });
@@ -661,7 +668,7 @@ function TasksContent() {
             setNewTaskData(prev => ({ ...prev, assignedTo: email || undefined }));
           }
         }}
-        showAssignment={supportsAssignment(projectId)}
+        showAssignment={projectId ? supportsAssignment(projectId) : false}
         accent={accent}
       />
     </div>

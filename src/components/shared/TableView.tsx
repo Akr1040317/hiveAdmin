@@ -186,7 +186,7 @@ export function TableView<T extends { id: string }>({
                             value={String(value || '')}
                             onChange={(e) => column.onEdit!(item, e.target.value)}
                             className="h-7 text-xs w-full"
-                            accent={accent}
+                            accent={typeof accent === 'boolean' ? accent : !!accent}
                             onClick={(e) => e.stopPropagation()}
                           >
                             {column.options.map((opt) => (

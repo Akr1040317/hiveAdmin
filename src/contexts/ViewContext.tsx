@@ -53,7 +53,7 @@ export function ViewProvider({
       if (data) {
         setViews(data);
         // Set current view to default or first view
-        const defaultView = data.find(v => v.isDefault) || data[0];
+        const defaultView = data.find((v: View) => v.isDefault) || data[0];
         if (defaultView) {
           setCurrentView(defaultView);
         } else if (data.length === 0) {
@@ -100,12 +100,12 @@ export function ViewProvider({
       if (updatedViews) {
         setViews(updatedViews);
         // Find the view with matching viewType (should be the one we just created)
-        const newView = updatedViews.find(v => v.viewType === view.viewType);
+        const newView = updatedViews.find((v: View) => v.viewType === view.viewType);
         if (newView) {
           setCurrentView(newView);
         } else {
           // Fallback: set to default or first view
-          const defaultView = updatedViews.find(v => v.isDefault) || updatedViews[0];
+          const defaultView = updatedViews.find((v: View) => v.isDefault) || updatedViews[0];
           if (defaultView) {
             setCurrentView(defaultView);
           }
@@ -145,7 +145,7 @@ export function ViewProvider({
       await loadViewsData();
       // Switch to default view or first available
       const remainingViews = views.filter(v => v.id !== currentView.id);
-      setCurrentView(remainingViews.find(v => v.isDefault) || remainingViews[0] || null);
+      setCurrentView(remainingViews.find((v: View) => v.isDefault) || remainingViews[0] || null);
     } catch (err: any) {
       setError(err.message || 'Failed to delete view');
       throw err;
@@ -165,7 +165,7 @@ export function ViewProvider({
 
   const switchViewType = useCallback(async (viewType: ViewType) => {
     // Find existing view of this type, or create one
-    const existingView = views.find(v => v.viewType === viewType);
+    const existingView = views.find((v: View) => v.viewType === viewType);
     if (existingView) {
       // Immediately switch to existing view
       setCurrentView(existingView);

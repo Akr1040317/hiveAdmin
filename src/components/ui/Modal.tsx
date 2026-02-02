@@ -43,7 +43,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <Card accent={accent}>
+        <Card accent={typeof accent === 'boolean' ? accent : !!accent}>
           {title && (
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle>{title}</CardTitle>

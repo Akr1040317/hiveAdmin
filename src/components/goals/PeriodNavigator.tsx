@@ -34,7 +34,7 @@ export function PeriodNavigator({
           size="sm"
           onClick={onPrevious}
           className="h-8 w-8 p-0"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
@@ -56,7 +56,7 @@ export function PeriodNavigator({
           size="sm"
           onClick={onNext}
           className="h-8 w-8 p-0"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
         >
           <ChevronRight className="w-4 h-4" />
         </Button>
@@ -68,7 +68,7 @@ export function PeriodNavigator({
           size="sm"
           onClick={onCurrent}
           className="text-xs"
-          accent={accent}
+          accent={typeof accent === 'boolean' ? accent : !!accent}
         >
           Go to Current
         </Button>
