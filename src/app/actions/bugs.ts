@@ -836,7 +836,8 @@ export async function generateBugEmail(
   };
   
   // Call Firebase Cloud Function
-  const apiUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/generateIssueEmail`;
+  const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+  const apiUrl = getFirebaseFunctionUrl(projectId, 'generateIssueEmail');
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -912,7 +913,8 @@ export async function sendBugUpdateEmail(
   }
   
   // Call Firebase Cloud Function to send email
-  const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;
+  const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+  const functionUrl = getFirebaseFunctionUrl(projectId, 'sendIssueUpdateEmail');
   
   const response = await fetch(functionUrl, {
     method: 'POST',
@@ -965,7 +967,8 @@ export async function parseEmailAndCreateIssue(
     throw new Error('parseEmailAndCreateIssue is only available for prepcenter projects');
   }
   
-  const apiUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/parseEmailAndCreateIssue`;
+  const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+  const apiUrl = getFirebaseFunctionUrl(projectId, 'parseEmailAndCreateIssue');
   
   const response = await fetch(apiUrl, {
     method: 'POST',

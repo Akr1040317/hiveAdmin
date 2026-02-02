@@ -183,7 +183,8 @@ export async function sendMeetingInvite(
     const subject = `[${projectName}] Meeting Invitation: ${meeting.title}`;
     
     // Call Firebase Cloud Function to send email with .ics attachment
-    const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendMeetingInviteEmail`;
+    const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+    const functionUrl = getFirebaseFunctionUrl(projectId, 'sendMeetingInviteEmail');
     
     // Send to each attendee individually
     const emailPromises = validAttendees.map(async (attendeeEmail) => {
@@ -309,7 +310,8 @@ export async function sendMeetingReminder(
     const subject = `[${projectName}] Reminder: ${meeting.title} ${daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`}`;
     
     // Call Firebase Cloud Function to send email
-    const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;
+    const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+    const functionUrl = getFirebaseFunctionUrl(projectId, 'sendIssueUpdateEmail');
     
     // Send to each attendee individually
     const emailPromises = validAttendees.map(async (attendeeEmail) => {

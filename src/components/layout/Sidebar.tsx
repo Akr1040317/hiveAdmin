@@ -11,6 +11,7 @@ const navigationItems = [
   { href: 'overview', label: 'Overview' },
   { href: 'calendar', label: 'Calendar' },
   { href: 'meetings', label: 'Meetings' },
+  { href: 'goals', label: 'Goals' },
   { href: 'bugs', label: 'Bugs' },
   { href: 'features', label: 'Features' },
   { href: 'tasks', label: 'Tasks' },

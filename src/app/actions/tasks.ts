@@ -482,7 +482,8 @@ export async function sendTaskUpdateEmail(
   }
   
   // Call Firebase Cloud Function to send email
-  const functionUrl = `https://us-central1-prepcenter-750c1.cloudfunctions.net/sendIssueUpdateEmail`;
+  const { getFirebaseFunctionUrl } = await import('@/lib/firebase-function-urls');
+  const functionUrl = getFirebaseFunctionUrl(projectId, 'sendIssueUpdateEmail');
   
   const response = await fetch(functionUrl, {
     method: 'POST',
