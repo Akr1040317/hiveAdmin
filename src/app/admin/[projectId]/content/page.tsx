@@ -88,7 +88,7 @@ function ContentContent() {
         contentType: selectedContent.contentType as any,
       }).then((reqs) => {
         if (reqs && selectedContent.publishAt) {
-          const matching = reqs.find((req) =>
+          const matching = reqs.find((req: ContentRequirement) =>
             isContentInPeriod(selectedContent, req)
           );
           setLinkedRequirement(matching || null);
@@ -218,7 +218,7 @@ function ContentContent() {
     { value: 'sent', label: 'Sent' },
   ];
   
-  const teamMembers = supportsAssignment(projectId) ? getTeamMembers(projectId) : [];
+  const teamMembers = projectId && supportsAssignment(projectId) ? getTeamMembers(projectId) : [];
 
   const contentTypeOptions = [
     { value: 'video', label: 'Video' },
@@ -332,7 +332,7 @@ function ContentContent() {
         </span>
       ),
     },
-    ...(supportsAssignment(projectId) ? [{
+    ...(projectId && supportsAssignment(projectId) ? [{
       key: 'assignedTo',
       header: 'ASSIGNED TO',
       sortable: true,
@@ -645,7 +645,7 @@ function ContentContent() {
             },
           },
         ]}
-        showAssignment={supportsAssignment(projectId)}
+        showAssignment={projectId ? supportsAssignment(projectId) : false}
         teamMembers={teamMembers}
         assignedTo={selectedContent?.assignedTo || null}
         onAssignedToChange={(email) => {
