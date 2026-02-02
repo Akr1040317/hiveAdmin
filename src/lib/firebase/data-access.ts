@@ -13,18 +13,25 @@ import {
  * Get Firestore instance for a specific project
  */
 export async function getProjectFirestore(projectId: ProjectId) {
-  const project = getProject(projectId);
-  if (!project) {
-    throw new Error(`Project ${projectId} not found`);
+  try {
+    const project = getProject(projectId);
+    if (!project) {
+      throw new Error(`Project ${projectId} not found`);
+    }
+    
+    // prepcenter-oman uses the named 'oman' database in the same Firebase project
+    if (projectId === 'prepcenter-oman') {
+      const app = getAdminApp('prepcenter');
+      return getFirestore(app, 'oman');
+    }
+    
+    return getAdminFirestore(project.firebaseProjectType);
+  } catch (error: any) {
+    console.error(`[getProjectFirestore] Error for project ${projectId}:`, error.message);
+    console.error(`[getProjectFirestore] Stack:`, error.stack);
+    // Re-throw with more context
+    throw new Error(`Failed to get Firestore for project ${projectId}: ${error.message}`);
   }
-  
-  // prepcenter-oman uses the named 'oman' database in the same Firebase project
-  if (projectId === 'prepcenter-oman') {
-    const app = getAdminApp('prepcenter');
-    return getFirestore(app, 'oman');
-  }
-  
-  return getAdminFirestore(project.firebaseProjectType);
 }
 
 /**
