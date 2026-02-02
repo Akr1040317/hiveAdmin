@@ -611,7 +611,7 @@ function CalendarItemsContent() {
             </div>
 
             {/* Action Buttons */}
-            {selectedItem && supportsAssignment(projectId) && (
+            {selectedItem && projectId && supportsAssignment(projectId) && (
               <div className="border-t border-border-subtle pt-4 flex gap-2">
                 <Button
                   type="button"
