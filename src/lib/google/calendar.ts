@@ -2,12 +2,21 @@ import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 
 let calendarClient: any = null;
+let jwtClient: JWT | null = null;
 
 /**
  * Initialize Google Calendar API client using service account
  */
-function initializeCalendarClient() {
-  if (calendarClient) {
+async function initializeCalendarClient() {
+  if (calendarClient && jwtClient) {
+    // Ensure JWT client is authorized - check if credentials exist and are not expired
+    const credentials = jwtClient.credentials;
+    if (!credentials || !credentials.access_token) {
+      await jwtClient.authorize();
+    } else if (credentials.expiry_date && credentials.expiry_date <= Date.now()) {
+      // Token expired, re-authorize
+      await jwtClient.authorize();
+    }
     return calendarClient;
   }
 
@@ -47,12 +56,33 @@ function initializeCalendarClient() {
     credentials = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
   }
 
+  // Handle private key formatting - ensure newlines are properly formatted
+  let privateKey = credentials.private_key;
+  if (typeof privateKey === 'string') {
+    // Replace escaped newlines with actual newlines if needed
+    if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
+      privateKey = privateKey.replace(/\\n/g, '\n');
+    }
+    // Also handle double-escaped newlines
+    if (privateKey.includes('\\\\n')) {
+      privateKey = privateKey.replace(/\\\\n/g, '\n');
+    }
+  }
+
   // Create JWT client
-  const jwtClient = new JWT({
+  jwtClient = new JWT({
     email: credentials.client_email,
-    key: credentials.private_key,
+    key: privateKey,
     scopes: ['https://www.googleapis.com/auth/calendar'],
   });
+
+  // Authorize the client
+  try {
+    await jwtClient.authorize();
+  } catch (error: any) {
+    console.error('Failed to authorize Google Calendar JWT client:', error);
+    throw new Error(`Failed to authorize Google Calendar service account: ${error.message}`);
+  }
 
   // Initialize Calendar API
   calendarClient = google.calendar({ version: 'v3', auth: jwtClient as any });
@@ -123,7 +153,7 @@ export interface CreateCalendarEventOptions {
 export async function createCalendarEvent(
   options: CreateCalendarEventOptions
 ): Promise<{ eventId: string; meetLink?: string; htmlLink: string }> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   const event: GoogleCalendarEvent = {
@@ -189,7 +219,7 @@ export async function updateCalendarEvent(
   eventId: string,
   options: Partial<CreateCalendarEventOptions>
 ): Promise<{ meetLink?: string; htmlLink: string }> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   // First, get the existing event
@@ -267,7 +297,7 @@ export async function updateCalendarEvent(
  * Delete a Google Calendar event
  */
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   try {
@@ -299,7 +329,7 @@ export async function getCalendarEvent(eventId: string): Promise<{
   meetLink?: string;
   htmlLink?: string;
 }> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   try {
@@ -336,7 +366,7 @@ export async function listGoogleCalendarEvents(
   timeMax?: Date,
   maxResults: number = 250
 ): Promise<GoogleCalendarEventData[]> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   try {
@@ -372,7 +402,7 @@ export async function listGoogleCalendarEvents(
  * Generate a Google Meet link for an existing event
  */
 export async function generateMeetLinkForEvent(eventId: string): Promise<string> {
-  const client = initializeCalendarClient();
+  const client = await initializeCalendarClient();
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
   // Get existing event
