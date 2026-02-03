@@ -2,16 +2,9 @@
 
 import { requireAuth } from '@/lib/firebase/server-auth';
 import {
-  getCollectionData,
-  getDocumentData,
-  createDocument,
-  updateDocument,
-  deleteDocument,
-  queryCollection,
   queryTopLevelCollection,
   updateTopLevelDocument,
   getTopLevelCollection,
-  getCollection,
 } from '@/lib/firebase/data-access';
 import { ProjectId, getProject } from '@/lib/projects';
 import { format } from 'date-fns';
@@ -43,7 +36,11 @@ export interface Bug {
 
 export async function getBugs(projectId: ProjectId, token?: string | null): Promise<Bug[]> {
   await requireAuth(token || undefined);
-  const bugs = await getCollectionData<Bug>(projectId, 'bugs');
+  const bugs = await queryTopLevelCollection<Bug>(
+    projectId,
+    'feedbackAndBugs',
+    (query) => query.where('type', '==', 'bug')
+  );
   
   // Recursively serialize all Date objects and non-serializable values
   return serializeForClient(bugs) as Bug[];
@@ -51,8 +48,13 @@ export async function getBugs(projectId: ProjectId, token?: string | null): Prom
 
 export async function getBug(projectId: ProjectId, bugId: string, token?: string | null): Promise<Bug | null> {
   await requireAuth(token);
-  const bug = await getDocumentData<Bug>(projectId, 'bugs', bugId);
-  if (!bug) return null;
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const docRef = collection.doc(bugId);
+  const doc = await docRef.get();
+  
+  if (!doc.exists) return null;
+  
+  const bug = { id: doc.id, ...doc.data() } as Bug;
   
   // Recursively serialize all Date objects and non-serializable values
   return serializeForClient(bug) as Bug;
@@ -72,9 +74,17 @@ export async function createBug(
   const bugData = {
     ...data,
     createdBy: user.email || 'unknown',
+    type: 'bug' as const, // Mark as bug type for filtering
   };
   
-  const bugId = await createDocument<Bug>(projectId, 'bugs', bugData);
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const now = new Date();
+  const docRef = await collection.add({
+    ...bugData,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const bugId = docRef.id;
   
   // Send email if bug is created with an assignee
   if (shouldSendEmails && bugData.assignedTo && bugData.assignedTo.trim() && bugData.assignedTo.includes('@')) {
@@ -159,7 +169,10 @@ export async function updateBug(
   
   if (shouldSendEmails) {
     // Get previous data to detect changes
-    const previousData = await getDocumentData<Bug>(projectId, 'bugs', bugId);
+    const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+    const docRef = collection.doc(bugId);
+    const doc = await docRef.get();
+    const previousData = doc.exists ? ({ id: doc.id, ...doc.data() } as Bug) : null;
     
     // Detect key changes
     const changes: string[] = [];
@@ -413,7 +426,11 @@ export async function updateBug(
     }
   }
   
-  return updateDocument<Bug>(projectId, 'bugs', bugId, data);
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  await collection.doc(bugId).update({
+    ...data,
+    updatedAt: new Date(),
+  });
 }
 
 export async function deleteBug(projectId: ProjectId, bugId: string, token?: string | null): Promise<void> {
@@ -426,11 +443,15 @@ export async function deleteBug(projectId: ProjectId, bugId: string, token?: str
   // Get bug data before deleting (for email notification)
   let bugData: Bug | null = null;
   if (shouldSendEmails) {
-    bugData = await getDocumentData<Bug>(projectId, 'bugs', bugId);
+    const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+    const docRef = collection.doc(bugId);
+    const doc = await docRef.get();
+    bugData = doc.exists ? ({ id: doc.id, ...doc.data() } as Bug) : null;
   }
   
   // Delete the bug
-  await deleteDocument(projectId, 'bugs', bugId);
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  await collection.doc(bugId).delete();
   
   // Send email notification if bug had an assignee
   if (shouldSendEmails && bugData && bugData.assignedTo && bugData.assignedTo.trim() && bugData.assignedTo.includes('@')) {
@@ -473,8 +494,8 @@ export async function getBugsByStatus(
   token?: string | null
 ): Promise<Bug[]> {
   await requireAuth(token);
-  return queryCollection<Bug>(projectId, 'bugs', (query) =>
-    query.where('status', '==', status)
+  return queryTopLevelCollection<Bug>(projectId, 'feedbackAndBugs', (query) =>
+    query.where('type', '==', 'bug').where('status', '==', status)
   );
 }
 
@@ -484,8 +505,8 @@ export async function getBugsByPlatform(
   token?: string | null
 ): Promise<Bug[]> {
   await requireAuth(token);
-  return queryCollection<Bug>(projectId, 'bugs', (query) =>
-    query.where('platform', '==', platform)
+  return queryTopLevelCollection<Bug>(projectId, 'feedbackAndBugs', (query) =>
+    query.where('type', '==', 'bug').where('platform', '==', platform)
   );
 }
 
@@ -686,12 +707,13 @@ export async function convertReportToBug(
   
   // Create the bug with custom timestamps (preserve original report timestamps)
   // report.timestamp and report.updatedAt are ISO strings from getFeedbackReports
-  const bugsCollection = await getCollection(projectId, 'bugs');
+  const bugsCollection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
   const reportTimestamp = new Date(report.timestamp);
   const reportUpdatedAt = new Date(report.updatedAt);
   
   const docRef = await bugsCollection.add({
     ...bugData,
+    type: 'bug' as const, // Mark as bug type for filtering
     createdAt: reportTimestamp,
     updatedAt: reportUpdatedAt,
     convertedFromReportId: reportId, // Track which report this bug came from
@@ -721,10 +743,13 @@ export async function unconvertBugToReport(
   const user = await requireAuth(token);
   
   // Get the bug
-  const bug = await getDocumentData<Bug>(projectId, 'bugs', bugId);
-  if (!bug) {
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const docRef = collection.doc(bugId);
+  const doc = await docRef.get();
+  if (!doc.exists) {
     throw new Error(`Bug ${bugId} not found`);
   }
+  const bug = { id: doc.id, ...doc.data() } as Bug;
   
   // Find the report ID - check bug field first, then search reports
   let reportId: string | null = bug.convertedFromReportId || null;
@@ -753,7 +778,8 @@ export async function unconvertBugToReport(
   }
   
   // Delete the bug
-  await deleteDocument(projectId, 'bugs', bugId);
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  await collection.doc(bugId).delete();
   
   // Clear the convertedToBugId on the report so it shows up in pending_reports again
   await updateTopLevelDocument(projectId, 'feedbackAndBugs', reportId, {
@@ -773,10 +799,13 @@ export async function isBugConvertedFromReport(
   await requireAuth(token);
   
   // Get the bug
-  const bug = await getDocumentData<Bug>(projectId, 'bugs', bugId);
-  if (!bug) {
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const docRef = collection.doc(bugId);
+  const doc = await docRef.get();
+  if (!doc.exists) {
     return null;
   }
+  const bug = { id: doc.id, ...doc.data() } as Bug;
   
   // Check if bug has convertedFromReportId field (new way)
   if (bug.convertedFromReportId) {
@@ -816,10 +845,13 @@ export async function generateBugEmail(
   await requireAuth(token);
   
   // Get the bug
-  const bug = await getDocumentData<Bug>(projectId, 'bugs', bugId);
-  if (!bug) {
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const docRef = collection.doc(bugId);
+  const doc = await docRef.get();
+  if (!doc.exists) {
     throw new Error(`Bug ${bugId} not found`);
   }
+  const bug = { id: doc.id, ...doc.data() } as Bug;
   
   // Normalize status to match expected format
   const status = bug.status || 'reported';
@@ -882,10 +914,13 @@ export async function sendBugUpdateEmail(
   await requireAuth(token);
   
   // Get the bug
-  const bug = await getDocumentData<Bug>(projectId, 'bugs', bugId);
-  if (!bug) {
+  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  const docRef = collection.doc(bugId);
+  const doc = await docRef.get();
+  if (!doc.exists) {
     throw new Error(`Bug ${bugId} not found`);
   }
+  const bug = { id: doc.id, ...doc.data() } as Bug;
   
   // Determine recipient email
   let recipientEmail: string | null = null;
@@ -938,7 +973,8 @@ export async function sendBugUpdateEmail(
   
   // Update bug with email metadata (only if sending to reporter, not assignee)
   if (!assignedToEmail) {
-    await updateDocument<Bug>(projectId, 'bugs', bugId, {
+    const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+    await collection.doc(bugId).update({
       lastEmailSent: new Date(),
       lastEmailSubject: subject,
     });

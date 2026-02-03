@@ -298,92 +298,70 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
   }
   
   if (projectType === 'admin') {
-    // Admin project - use service account if available
+    // Admin project - service account is REQUIRED, no ADC fallback
     // For token verification, Firebase Admin SDK requires credentials
-    if (serviceAccount) {
-      try {
-        // Validate private key before using it
-        const privateKeyTrimmed = serviceAccount.privateKey.trim();
-        if (!privateKeyTrimmed.startsWith('-----BEGIN PRIVATE KEY-----')) {
-          throw new Error(`Invalid private key format - doesn't start with BEGIN marker. First 50 chars: ${privateKeyTrimmed.substring(0, 50)}`);
+    if (!serviceAccount) {
+      // Log detailed diagnostics
+      const envKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
+      const envValue = process.env[envKey];
+      console.error(`[${projectType}] Service account not found. Diagnostics:`);
+      console.error(`[${projectType}] ${envKey} is ${envValue ? 'SET' : 'NOT SET'}`);
+      if (envValue) {
+        console.error(`[${projectType}] Value length: ${envValue.length}`);
+        const isPlaceholder = envValue.includes('...') || envValue.length < 200;
+        console.error(`[${projectType}] Is placeholder: ${isPlaceholder}`);
+        if (isPlaceholder) {
+          console.error(`[${projectType}] Service account JSON appears to be a placeholder. Please set a valid service account JSON.`);
         }
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[${projectType}] Initializing Firebase Admin with service account...`);
-          console.log(`[${projectType}] Project ID: ${serviceAccount.projectId}`);
-          console.log(`[${projectType}] Client Email: ${serviceAccount.clientEmail}`);
-          console.log(`[${projectType}] Private key length: ${privateKeyTrimmed.length}`);
-        }
-        
-        // Check if app already exists before initializing
-        try {
-          app = getApp(appName);
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
-          }
-        } catch (error) {
-          // App doesn't exist, create it
-          app = initializeApp({
-            credential: cert({
-              projectId: serviceAccount.projectId,
-              privateKey: privateKeyTrimmed,
-              clientEmail: serviceAccount.clientEmail,
-            }),
-            projectId: serviceAccount.projectId,
-          }, appName);
-        }
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[${projectType}] Firebase Admin app initialized successfully`);
-        }
-      } catch (initError: any) {
-        console.error(`[${projectType}] Failed to initialize Firebase Admin app:`, initError.message);
-        console.error(`[${projectType}] Error details:`, initError);
-        throw initError;
-      }
-    } else {
-      // Try to use Application Default Credentials (for environments like GCP, Vercel, etc.)
-      const adminProjectId = projectId || process.env.ADMIN_FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-      if (!adminProjectId) {
-        throw new Error('Admin Firebase project ID not found. Set ADMIN_FIREBASE_PROJECT_ID or NEXT_PUBLIC_FIREBASE_PROJECT_ID');
       }
       
-      try {
-        // Check if app already exists before initializing
-        try {
-          app = getApp(appName);
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
-          }
-        } catch (error) {
-          // App doesn't exist, create it
-          // Try to initialize without explicit credentials (uses ADC if available)
-          app = initializeApp({
-            projectId: adminProjectId,
-          }, appName);
-        }
-      } catch (error: any) {
-        // If that fails, we need service account credentials
-        const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_ADMIN`;
-        const jsonKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
-        console.error(`[${projectType}] Failed to initialize admin Firebase Admin SDK:`, error.message);
-        console.error(`[${projectType}] Service account not found. Check your environment variables.`);
-        // In production, provide Vercel-specific instructions
-        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-          throw new Error(
-            `Admin Firebase service account required for server-side token verification.\n` +
-            `Please set ${jsonKey} in Vercel environment variables (Settings > Environment Variables).\n` +
-            `See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.\n` +
-            `Original error: ${error.message}`
-          );
-        }
-        throw new Error(
-          `Admin Firebase service account required for server-side token verification.\n` +
-          `Please set ${pathKey} or ${jsonKey} in your .env.local file.\n` +
-          `See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.\n` +
-          `Original error: ${error.message}`
-        );
+      // Throw immediately - no ADC fallback
+      throw new Error(
+        `Admin Firebase service account required. ` +
+        `Set ${envKey} in Vercel environment variables with valid service account JSON. ` +
+        `See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.`
+      );
+    }
+    
+    try {
+      // Validate private key before using it
+      const privateKeyTrimmed = serviceAccount.privateKey.trim();
+      if (!privateKeyTrimmed.startsWith('-----BEGIN PRIVATE KEY-----')) {
+        throw new Error(`Invalid private key format - doesn't start with BEGIN marker. First 50 chars: ${privateKeyTrimmed.substring(0, 50)}`);
       }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[${projectType}] Initializing Firebase Admin with service account...`);
+        console.log(`[${projectType}] Project ID: ${serviceAccount.projectId}`);
+        console.log(`[${projectType}] Client Email: ${serviceAccount.clientEmail}`);
+        console.log(`[${projectType}] Private key length: ${privateKeyTrimmed.length}`);
+      }
+      
+      // Check if app already exists before initializing
+      try {
+        app = getApp(appName);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[${projectType}] Firebase Admin app already exists, reusing: ${appName}`);
+        }
+      } catch (error) {
+        // App doesn't exist, create it
+        app = initializeApp({
+          credential: cert({
+            projectId: serviceAccount.projectId,
+            privateKey: privateKeyTrimmed,
+            clientEmail: serviceAccount.clientEmail,
+          }),
+          projectId: serviceAccount.projectId,
+        }, appName);
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[${projectType}] Firebase Admin app initialized successfully`);
+      }
+    } catch (initError: any) {
+      console.error(`[${projectType}] Failed to initialize Firebase Admin app:`, initError.message);
+      console.error(`[${projectType}] Error details:`, initError);
+      throw initError;
     }
   } else {
     // Other projects use service account
