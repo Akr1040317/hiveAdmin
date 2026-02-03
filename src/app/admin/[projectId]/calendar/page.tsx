@@ -8,7 +8,7 @@ import { ViewTabs } from '@/components/shared/ViewTabs';
 import { TableView, TableColumn } from '@/components/shared/TableView';
 import { CalendarView } from '@/components/shared/CalendarView';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
-import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem, sendCalendarItemNotification, sendCalendarItemReminder, syncCalendarItemToGoogleCalendar, generateMeetLinkForCalendarItem, unsyncCalendarItemFromGoogleCalendar } from '@/app/actions/calendar';
+import { CalendarItem, getCalendarItems, createCalendarItem, updateCalendarItem, deleteCalendarItem, sendCalendarItemNotification, sendCalendarItemReminder, syncCalendarItemToGoogleCalendar, generateMeetLinkForCalendarItem, unsyncCalendarItemFromGoogleCalendar, importEventsFromGoogleCalendar } from '@/app/actions/calendar';
 import { Task, getTasks } from '@/app/actions/tasks';
 import { Bug, getBugs } from '@/app/actions/bugs';
 import { Feature, getFeatures } from '@/app/actions/features';
@@ -71,25 +71,44 @@ function CalendarItemsContent() {
   const { execute: handleSyncToGoogle } = useServerAction(syncCalendarItemToGoogleCalendar);
   const { execute: handleGenerateMeetLink } = useServerAction(generateMeetLinkForCalendarItem);
   const { execute: handleUnsyncFromGoogle } = useServerAction(unsyncCalendarItemFromGoogleCalendar);
+  const { execute: handleImportFromGoogle } = useServerAction(importEventsFromGoogleCalendar);
 
   const loading = loadingCalendar || loadingTasks || loadingBugs || loadingFeatures;
 
   useEffect(() => {
     if (projectId) {
-      Promise.all([
-        loadCalendarItems(projectId).then((data) => {
-          if (data) setCalendarItems(data);
-        }),
-        loadTasks(projectId).then((data) => {
-          if (data) setTasks(data);
-        }),
-        loadBugs(projectId).then((data) => {
-          if (data) setBugs(data);
-        }),
-        loadFeatures(projectId).then((data) => {
-          if (data) setFeatures(data);
-        }),
-      ]);
+      const loadData = async () => {
+        // Load from Firestore
+        const [items, tasks, bugs, features] = await Promise.all([
+          loadCalendarItems(projectId),
+          loadTasks(projectId),
+          loadBugs(projectId),
+          loadFeatures(projectId),
+        ]);
+        
+        if (items) setCalendarItems(items);
+        if (tasks) setTasks(tasks);
+        if (bugs) setBugs(bugs);
+        if (features) setFeatures(features);
+        
+        // Import from Google Calendar (only for prepcenter projects, non-blocking, graceful failure)
+        const isPrepCenterProject = projectId === 'prepcenter-uae' || projectId === 'prepcenter-oman';
+        if (isPrepCenterProject) {
+          try {
+            const result = await handleImportFromGoogle(projectId);
+            console.log(`[Google Calendar] Imported: ${result.imported}, Updated: ${result.updated}, Skipped: ${result.skipped}`);
+            
+            // Reload calendar items after import
+            const updatedItems = await loadCalendarItems(projectId);
+            if (updatedItems) setCalendarItems(updatedItems);
+          } catch (error) {
+            console.error('[Google Calendar] Failed to import events:', error);
+            // Continue even if import fails
+          }
+        }
+      };
+      
+      loadData();
     }
   }, [projectId]);
 

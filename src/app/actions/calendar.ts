@@ -17,6 +17,7 @@ import {
   updateCalendarEvent,
   deleteCalendarEvent,
   generateMeetLinkForEvent,
+  listGoogleCalendarEvents,
 } from '@/lib/google/calendar';
 
 export interface CalendarItem {
@@ -54,7 +55,20 @@ export async function createCalendarItem(
   token?: string | null
 ): Promise<string> {
   await requireAuth(token);
-  return createDocument<CalendarItem>(projectId, 'calendar', data);
+  
+  // Create in Firestore first
+  const itemId = await createDocument<CalendarItem>(projectId, 'calendar', data);
+  
+  // Auto-sync to Google Calendar (non-blocking, graceful failure)
+  try {
+    await syncCalendarItemToGoogleCalendar(projectId, itemId, false, token);
+  } catch (error) {
+    // Log error but don't fail the creation
+    console.error('[Google Calendar] Failed to auto-sync calendar item:', error);
+    // Item is still created in Firestore, user can manually sync later
+  }
+  
+  return itemId;
 }
 
 export async function updateCalendarItem(
@@ -64,12 +78,42 @@ export async function updateCalendarItem(
   token?: string | null
 ): Promise<void> {
   await requireAuth(token);
-  return updateDocument<CalendarItem>(projectId, 'calendar', itemId, data);
+  
+  // Update in Firestore first
+  await updateDocument<CalendarItem>(projectId, 'calendar', itemId, data);
+  
+  // Get updated item to check sync status
+  const updatedItem = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  
+  // Auto-sync update to Google Calendar if already synced
+  if (updatedItem?.googleCalendarSynced && updatedItem?.googleCalendarEventId) {
+    try {
+      await syncCalendarItemToGoogleCalendar(projectId, itemId, false, token);
+    } catch (error) {
+      console.error('[Google Calendar] Failed to auto-sync calendar item update:', error);
+      // Update still saved in Firestore
+    }
+  }
 }
 
 export async function deleteCalendarItem(projectId: ProjectId, itemId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
-  return deleteDocument(projectId, 'calendar', itemId);
+  
+  // Get item to check sync status before deleting
+  const item = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  
+  // Delete from Google Calendar if synced
+  if (item?.googleCalendarSynced && item?.googleCalendarEventId) {
+    try {
+      await unsyncCalendarItemFromGoogleCalendar(projectId, itemId, token);
+    } catch (error) {
+      console.error('[Google Calendar] Failed to delete calendar item from Google Calendar:', error);
+      // Continue with Firestore deletion even if Google Calendar deletion fails
+    }
+  }
+  
+  // Delete from Firestore
+  await deleteDocument(projectId, 'calendar', itemId);
 }
 
 export async function getCalendarItemsByDateRange(
@@ -511,4 +555,101 @@ export async function unsyncCalendarItemFromGoogleCalendar(
       googleCalendarHtmlLink: undefined,
     });
   }
+}
+
+/**
+ * Import events from Google Calendar into Firestore
+ * Only works for prepcenter projects (prepcenter-uae, prepcenter-oman)
+ */
+export async function importEventsFromGoogleCalendar(
+  projectId: ProjectId,
+  token?: string | null
+): Promise<{ imported: number; updated: number; skipped: number }> {
+  await requireAuth(token);
+  
+  // Only import for prepcenter projects (prepcenter-uae, prepcenter-oman)
+  const project = getProject(projectId);
+  const shouldImport = project?.id === 'prepcenter-uae' || project?.id === 'prepcenter-oman';
+  
+  if (!shouldImport) {
+    console.log('[Google Calendar] Skipping import - not a prepcenter project');
+    return { imported: 0, updated: 0, skipped: 0 };
+  }
+  
+  // Get events from Google Calendar (last 30 days to 1 year ahead)
+  const timeMin = new Date();
+  timeMin.setDate(timeMin.getDate() - 30);
+  const timeMax = new Date();
+  timeMax.setFullYear(timeMax.getFullYear() + 1);
+  
+  const googleEvents = await listGoogleCalendarEvents(timeMin, timeMax);
+  
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  
+  for (const googleEvent of googleEvents) {
+    // Check if event already exists in Firestore (by googleCalendarEventId)
+    const existingItems = await queryCollection<CalendarItem>(
+      projectId,
+      'calendar',
+      (query) => query.where('googleCalendarEventId', '==', googleEvent.id)
+    );
+    
+    const existingItem = existingItems[0];
+    
+    // Parse date/time from Google Calendar event
+    const startDate = new Date(googleEvent.start);
+    const endDate = new Date(googleEvent.end);
+    const timeStr = startDate.toTimeString().slice(0, 5); // HH:mm format
+    
+    // Determine if it's an all-day event
+    const isAllDay = !googleEvent.start.includes('T');
+    
+    // Map Google Calendar event to CalendarItem
+    const itemData: Omit<CalendarItem, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: googleEvent.summary,
+      type: 'event', // Default to 'event' type
+      date: isAllDay ? startDate : new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()),
+      time: isAllDay ? undefined : timeStr,
+      notes: googleEvent.description || '',
+      status: 'scheduled',
+      attendees: googleEvent.attendees || [],
+      googleCalendarEventId: googleEvent.id,
+      googleMeetLink: googleEvent.hangoutLink,
+      googleCalendarSynced: true,
+      googleCalendarHtmlLink: googleEvent.htmlLink,
+    };
+    
+    if (existingItem) {
+      // Update existing item if it differs
+      const needsUpdate = 
+        existingItem.title !== itemData.title ||
+        existingItem.notes !== itemData.notes ||
+        existingItem.date.getTime() !== itemData.date.getTime() ||
+        existingItem.time !== itemData.time ||
+        JSON.stringify(existingItem.attendees || []) !== JSON.stringify(itemData.attendees || []);
+      
+      if (needsUpdate) {
+        await updateDocument<CalendarItem>(projectId, 'calendar', existingItem.id, {
+          title: itemData.title,
+          notes: itemData.notes,
+          date: itemData.date,
+          time: itemData.time,
+          attendees: itemData.attendees,
+          googleMeetLink: itemData.googleMeetLink,
+          googleCalendarHtmlLink: itemData.googleCalendarHtmlLink,
+        });
+        updated++;
+      } else {
+        skipped++;
+      }
+    } else {
+      // Create new item
+      await createDocument<CalendarItem>(projectId, 'calendar', itemData);
+      imported++;
+    }
+  }
+  
+  return { imported, updated, skipped };
 }

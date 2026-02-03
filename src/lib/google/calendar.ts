@@ -93,6 +93,18 @@ export interface GoogleCalendarEvent {
   };
 }
 
+export interface GoogleCalendarEventData {
+  id: string;
+  summary: string;
+  description?: string;
+  start: string;
+  end: string;
+  location?: string;
+  attendees?: string[];
+  hangoutLink?: string;
+  htmlLink?: string;
+}
+
 export interface CreateCalendarEventOptions {
   summary: string;
   description?: string;
@@ -313,6 +325,46 @@ export async function getCalendarEvent(eventId: string): Promise<{
     }
     console.error('Error getting Google Calendar event:', error);
     throw new Error(`Failed to get Google Calendar event: ${error.message}`);
+  }
+}
+
+/**
+ * List Google Calendar events
+ */
+export async function listGoogleCalendarEvents(
+  timeMin?: Date,
+  timeMax?: Date,
+  maxResults: number = 250
+): Promise<GoogleCalendarEventData[]> {
+  const client = initializeCalendarClient();
+  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+
+  try {
+    const response = await client.events.list({
+      calendarId,
+      timeMin: timeMin?.toISOString(),
+      timeMax: timeMax?.toISOString(),
+      maxResults,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const events = response.data.items || [];
+    
+    return events.map((event: any) => ({
+      id: event.id!,
+      summary: event.summary || 'Untitled Event',
+      description: event.description,
+      start: event.start?.dateTime || event.start?.date || '',
+      end: event.end?.dateTime || event.end?.date || '',
+      location: event.location,
+      attendees: event.attendees?.map((a: any) => a.email).filter(Boolean),
+      hangoutLink: event.hangoutLink,
+      htmlLink: event.htmlLink,
+    }));
+  } catch (error: any) {
+    console.error('Error listing Google Calendar events:', error);
+    throw new Error(`Failed to list Google Calendar events: ${error.message}`);
   }
 }
 
