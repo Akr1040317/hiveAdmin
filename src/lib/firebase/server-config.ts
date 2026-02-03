@@ -14,7 +14,168 @@ interface ServiceAccountConfig {
   clientEmail: string;
 }
 
+/**
+ * Parse service account JSON from environment variable string.
+ * Handles Vercel's formatting where JSON may be wrapped in quotes and contains control characters.
+ */
+function parseServiceAccountJson(jsonString: string, projectType: FirebaseProjectType): any {
+  let cleaned = jsonString.trim();
+  const originalLength = cleaned.length;
+  
+  // Helper function to escape control characters within JSON string values
+  // This properly handles unescaped newlines, tabs, etc. that break JSON parsing
+  function escapeControlCharsInStrings(str: string): string {
+    let result = '';
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = 0; i < str.length; i++) {
+      const char = str[i];
+      const prevChar = i > 0 ? str[i - 1] : '';
+      
+      if (escapeNext) {
+        result += char;
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\') {
+        result += char;
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && prevChar !== '\\') {
+        inString = !inString;
+        result += char;
+        continue;
+      }
+      
+      if (inString) {
+        // Inside a string value - escape control characters
+        if (char === '\n') {
+          result += '\\n';
+        } else if (char === '\r') {
+          result += '\\r';
+        } else if (char === '\t') {
+          result += '\\t';
+        } else if (char.charCodeAt(0) < 0x20) {
+          // Other control characters
+          result += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        } else {
+          result += char;
+        }
+      } else {
+        // Outside string - keep as-is
+        result += char;
+      }
+    }
+    
+    return result;
+  }
+  
+  // Strategy 1: Try parsing as-is
+  try {
+    return JSON.parse(cleaned);
+  } catch (error1) {
+    const errorMsg = error1 instanceof Error ? error1.message : String(error1);
+    
+    // Strategy 2: Strip outer quotes (single or double)
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || 
+        (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+      cleaned = cleaned.slice(1, -1);
+      try {
+        return JSON.parse(cleaned);
+      } catch (error2) {
+        // Strategy 3: Escape control characters in string values, then parse
+        if (errorMsg.includes('control character') || errorMsg.includes('Bad control')) {
+          try {
+            const escaped = escapeControlCharsInStrings(cleaned);
+            return JSON.parse(escaped);
+          } catch (error3) {
+            // Continue to next strategy
+          }
+        }
+        
+        // Strategy 4: Try unescaping the string first, then parse
+        try {
+          // Handle escaped quotes and newlines
+          const unescaped = cleaned
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .replace(/\\n/g, '\n')
+            .replace(/\\\\/g, '\\');
+          return JSON.parse(unescaped);
+        } catch (error4) {
+          // Strategy 5: Try replacing \\n with \n then parse
+          const withNewlines = cleaned.replace(/\\n/g, '\n');
+          try {
+            return JSON.parse(withNewlines);
+          } catch (error5) {
+            // Strategy 6: Escape control characters in the unescaped version
+            try {
+              const unescaped = cleaned
+                .replace(/\\"/g, '"')
+                .replace(/\\'/g, "'")
+                .replace(/\\n/g, '\n')
+                .replace(/\\\\/g, '\\');
+              const escapedUnescaped = escapeControlCharsInStrings(unescaped);
+              return JSON.parse(escapedUnescaped);
+            } catch (error6) {
+              // All strategies failed - log detailed error
+              const sanitizedStart = cleaned.substring(0, 50).replace(/[^\x20-\x7E]/g, '?');
+              const sanitizedEnd = cleaned.length > 50 ? cleaned.substring(cleaned.length - 50).replace(/[^\x20-\x7E]/g, '?') : '';
+              console.error(`[${projectType}] Failed to parse JSON after all strategies`);
+              console.error(`[${projectType}] Original length: ${originalLength}`);
+              console.error(`[${projectType}] After quote stripping: ${cleaned.length}`);
+              console.error(`[${projectType}] First 50 chars: ${sanitizedStart}`);
+              console.error(`[${projectType}] Last 50 chars: ${sanitizedEnd}`);
+              console.error(`[${projectType}] Parse error 1:`, errorMsg);
+              console.error(`[${projectType}] Parse error 2:`, error2 instanceof Error ? error2.message : String(error2));
+              throw error6; // Throw the last error
+            }
+          }
+        }
+      }
+    } else {
+      // No outer quotes, but parsing failed - try other strategies
+      try {
+        // Strategy 1: Escape control characters if error mentions them
+        if (errorMsg.includes('control character') || errorMsg.includes('Bad control')) {
+          const escaped = escapeControlCharsInStrings(cleaned);
+          return JSON.parse(escaped);
+        }
+        // Strategy 2: Try replacing \\n with \n
+        const withNewlines = cleaned.replace(/\\n/g, '\n');
+        return JSON.parse(withNewlines);
+      } catch (error8) {
+        const sanitizedStart = cleaned.substring(0, 50).replace(/[^\x20-\x7E]/g, '?');
+        console.error(`[${projectType}] Failed to parse JSON (no outer quotes)`);
+        console.error(`[${projectType}] Length: ${originalLength}`);
+        console.error(`[${projectType}] First 50 chars: ${sanitizedStart}`);
+        console.error(`[${projectType}] Parse error:`, errorMsg);
+        throw error8;
+      }
+    }
+  }
+}
+
 function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccountConfig | null {
+  // ===== AGGRESSIVE DIAGNOSTIC LOGGING =====
+  // Log at the very start to diagnose environment variable access issues
+  console.log(`[${projectType}] ===== DIAGNOSTIC: getServiceAccountConfig called =====`);
+  console.log(`[${projectType}] process.env is defined: ${typeof process.env !== 'undefined'}`);
+  console.log(`[${projectType}] process.env type: ${typeof process.env}`);
+  
+  // Log first 20 environment variable keys
+  const allEnvKeys = Object.keys(process.env || {});
+  console.log(`[${projectType}] Total environment variables: ${allEnvKeys.length}`);
+  console.log(`[${projectType}] First 20 env var keys: ${allEnvKeys.slice(0, 20).join(', ')}`);
+  
+  // Log ALL environment variables that contain "FIREBASE"
+  const firebaseKeys = allEnvKeys.filter(k => k.includes('FIREBASE'));
+  console.log(`[${projectType}] All FIREBASE_* env vars (${firebaseKeys.length}): ${firebaseKeys.join(', ')}`);
+  
   // Priority 1: Check environment variable for JSON string (for Vercel/production)
   const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
   const serviceAccountJson = process.env[envKey];
@@ -22,6 +183,35 @@ function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccou
   // Priority 2: Check environment variable for file path (for local development)
   const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()}`;
   const serviceAccountPath = process.env[pathKey];
+  
+  // Log exact values (sanitized)
+  console.log(`[${projectType}] Checking ${envKey}:`);
+  console.log(`[${projectType}]   - Exists: ${serviceAccountJson !== undefined}`);
+  console.log(`[${projectType}]   - Type: ${typeof serviceAccountJson}`);
+  console.log(`[${projectType}]   - Length: ${serviceAccountJson?.length || 0}`);
+  if (serviceAccountJson) {
+    const sanitizedPreview = serviceAccountJson.substring(0, 100).replace(/private_key[^,}]*/gi, 'private_key":"***HIDDEN***');
+    console.log(`[${projectType}]   - Preview (first 100 chars, sanitized): ${sanitizedPreview}...`);
+  }
+  
+  console.log(`[${projectType}] Checking ${pathKey}:`);
+  console.log(`[${projectType}]   - Exists: ${serviceAccountPath !== undefined}`);
+  console.log(`[${projectType}]   - Value: ${serviceAccountPath || 'NOT SET'}`);
+  console.log(`[${projectType}] ===== END DIAGNOSTIC =====`);
+  
+  // Enhanced logging for production debugging
+  if (!serviceAccountJson && !serviceAccountPath) {
+    console.error(`[${projectType}] Environment variable ${envKey} is not set`);
+    console.error(`[${projectType}] Environment variable ${pathKey} is not set`);
+    // Log all FIREBASE_SERVICE_ACCOUNT_* env vars for debugging
+    const allFirebaseVars = Object.keys(process.env).filter(k => k.startsWith('FIREBASE_SERVICE_ACCOUNT_'));
+    console.error(`[${projectType}] Available FIREBASE_SERVICE_ACCOUNT_* vars: ${allFirebaseVars.join(', ')}`);
+  } else if (serviceAccountJson) {
+    // Log sanitized info (hide private key)
+    const sanitizedPreview = serviceAccountJson.substring(0, 100).replace(/private_key[^,}]*/gi, 'private_key":"***HIDDEN***');
+    console.log(`[${projectType}] Found ${envKey}, length: ${serviceAccountJson.length}`);
+    console.log(`[${projectType}] Preview (first 100 chars, sanitized): ${sanitizedPreview}...`);
+  }
   
   // Check if JSON string is a placeholder
   const isJsonPlaceholder = serviceAccountJson && (
@@ -35,32 +225,45 @@ function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccou
   // Try JSON string first (for Vercel/production) - skip if placeholder
   if (serviceAccountJson && !isJsonPlaceholder) {
     try {
-      const parsed = typeof serviceAccountJson === 'string' 
-        ? JSON.parse(serviceAccountJson) 
-        : serviceAccountJson;
+      // Use the robust parser that handles Vercel's formatting
+      const parsed = parseServiceAccountJson(serviceAccountJson, projectType);
       
       // Validate required fields
       if (!parsed.private_key || !parsed.client_email || !parsed.project_id) {
         console.error(`[${projectType}] Service account JSON missing required fields`);
+        console.error(`[${projectType}] Has private_key: ${!!parsed.private_key}`);
+        console.error(`[${projectType}] Has client_email: ${!!parsed.client_email}`);
+        console.error(`[${projectType}] Has project_id: ${!!parsed.project_id}`);
         return null;
       }
       
       // Handle private key - it should have \n as escape sequences
       let privateKey = parsed.private_key;
-      if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
-        privateKey = privateKey.replace(/\\n/g, '\n');
+      if (typeof privateKey === 'string') {
+        // Replace escaped newlines with actual newlines
+        if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
+          privateKey = privateKey.replace(/\\n/g, '\n');
+        }
+        // Also handle double-escaped newlines (\\n -> \n)
+        if (privateKey.includes('\\\\n')) {
+          privateKey = privateKey.replace(/\\\\n/g, '\n');
+        }
       }
       
       // Validate private key format
       if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+        const keyPreview = privateKey.substring(0, 50).replace(/[^\x20-\x7E]/g, '?');
         console.error(`[${projectType}] Invalid private key format in JSON string`);
+        console.error(`[${projectType}] Private key starts with: ${keyPreview}`);
+        console.error(`[${projectType}] Private key length: ${privateKey.length}`);
         return null;
       }
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[${projectType}] Successfully loaded service account from environment variable ${envKey}`);
-        console.log(`[${projectType}] Project ID: ${parsed.project_id}`);
-      }
+      // Log success (always, not just in development, for production debugging)
+      console.log(`[${projectType}] Successfully loaded service account from environment variable ${envKey}`);
+      console.log(`[${projectType}] Project ID: ${parsed.project_id}`);
+      console.log(`[${projectType}] Client Email: ${parsed.client_email}`);
+      console.log(`[${projectType}] Private key length: ${privateKey.length} chars`);
       
       return {
         projectId: parsed.project_id,
@@ -68,7 +271,11 @@ function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccou
         clientEmail: parsed.client_email,
       };
     } catch (error) {
-      console.error(`[${projectType}] Error parsing service account JSON from ${envKey}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[${projectType}] Error parsing service account JSON from ${envKey}: ${errorMessage}`);
+      if (error instanceof Error && error.stack) {
+        console.error(`[${projectType}] Stack trace:`, error.stack);
+      }
       // Fall through to try file path
     }
   }
