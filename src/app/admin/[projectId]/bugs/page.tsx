@@ -614,7 +614,7 @@ ${bug.notes}
     { id: 'fixed', title: 'COMPLETED', status: 'fixed' },
   ];
 
-  const viewType = currentView?.viewType || 'table';
+  const viewType = currentView?.viewType || 'board';
   const accent = project?.accentColorKey || false;
 
   return (
@@ -693,36 +693,38 @@ ${bug.notes}
         {loading ? (
           <div className="text-center py-12 text-gray-400">Loading bugs...</div>
         ) : viewType === 'table' ? (
-          <TableView
-            data={filteredBugs}
-            columns={tableColumns}
-            sorts={sorts}
-            onSortChange={(newSorts) => {
-              setSorts(newSorts);
-              updateCurrentView({ sorts: newSorts });
-            }}
-            visibleColumns={currentView?.visibleColumns}
-            onRowClick={(bug) => {
-              setSelectedBug(bug);
-              setIsDrawerOpen(true);
-            }}
-            onQuickAdd={() => {
-              setSelectedBug(null);
-              setNewBugData({
-                title: 'New Bug',
-                description: '',
-                status: 'reported',
-                severity: 'medium',
-                platform: 'web',
-                dueDate: undefined,
-                completionDate: undefined,
-                assignedTo: undefined,
-              });
-              setIsDrawerOpen(true);
-            }}
-            emptyMessage="No bugs found. Create your first bug!"
-            accent={accent}
-          />
+          <div className="w-full">
+            <TableView
+              data={filteredBugs}
+              columns={tableColumns}
+              sorts={sorts}
+              onSortChange={(newSorts) => {
+                setSorts(newSorts);
+                updateCurrentView({ sorts: newSorts });
+              }}
+              visibleColumns={currentView?.visibleColumns}
+              onRowClick={(bug) => {
+                setSelectedBug(bug);
+                setIsDrawerOpen(true);
+              }}
+              onQuickAdd={() => {
+                setSelectedBug(null);
+                setNewBugData({
+                  title: 'New Bug',
+                  description: '',
+                  status: 'reported',
+                  severity: 'medium',
+                  platform: 'web',
+                  dueDate: undefined,
+                  completionDate: undefined,
+                  assignedTo: undefined,
+                });
+                setIsDrawerOpen(true);
+              }}
+              emptyMessage="No bugs found. Create your first bug!"
+              accent={accent}
+            />
+          </div>
         ) : viewType === 'board' ? (
           <BoardView
             data={boardData as any}

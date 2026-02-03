@@ -110,9 +110,8 @@ export function TableView<T extends { id: string }>({
   };
 
   return (
-    <div className="relative min-h-[400px]">
-      <div className="overflow-x-auto">
-        <Table>
+    <div className="relative min-h-[400px] w-full">
+      <Table>
           <TableHeader>
             <TableRow className="border-b border-border-subtle">
               {visibleCols.map((column) => (
@@ -136,22 +135,17 @@ export function TableView<T extends { id: string }>({
           </TableHeader>
           <TableBody>
             {sortedData.length === 0 ? (
-              // Show empty rows instead of empty state message
-              Array.from({ length: 5 }).map((_, idx) => (
-                <TableRow
-                  key={`empty-${idx}`}
-                  className="border-b border-border-subtle"
+              <TableRow>
+                <TableCell
+                  colSpan={visibleCols.length}
+                  className="px-3 py-12 text-center"
                 >
-                  {visibleCols.map((column) => (
-                    <TableCell
-                      key={String(column.key)}
-                      className="px-3 py-2"
-                    >
-                      <span className="text-xs text-gray-600">-</span>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+                  <div className="flex flex-col items-center gap-2">
+                    <FileText className="w-8 h-8 text-gray-600" />
+                    <p className="text-sm text-gray-400">{emptyMessage}</p>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : (
               sortedData.map((item) => (
                 <TableRow
@@ -224,7 +218,6 @@ export function TableView<T extends { id: string }>({
             )}
           </TableBody>
         </Table>
-      </div>
 
       {/* Quick Add Row */}
       {onQuickAdd && (
