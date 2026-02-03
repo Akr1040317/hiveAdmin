@@ -15,96 +15,26 @@ interface ServiceAccountConfig {
 }
 
 function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccountConfig | null {
-  // Try to get from environment variables (JSON string or path)
+  // Priority 1: Check environment variable for JSON string (for Vercel/production)
   const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
-  const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()}`;
-  
   const serviceAccountJson = process.env[envKey];
+  
+  // Priority 2: Check environment variable for file path (for local development)
+  const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()}`;
   const serviceAccountPath = process.env[pathKey];
   
-  // Check if JSON string is a placeholder (contains "..." which indicates it's not real credentials)
+  // Check if JSON string is a placeholder
   const isJsonPlaceholder = serviceAccountJson && (
     serviceAccountJson.includes('"private_key":"..."') ||
     serviceAccountJson.includes('"private_key": "..."') ||
     serviceAccountJson.includes('"private_key":"...') ||
     serviceAccountJson.includes('private_key":"...') ||
-    serviceAccountJson.trim().length < 200 // Placeholder JSONs are usually short
+    serviceAccountJson.trim().length < 200
   );
   
-  if (process.env.NODE_ENV === 'development' && serviceAccountJson) {
-    console.log(`[${projectType}] JSON string is placeholder: ${isJsonPlaceholder}`);
-    console.log(`[${projectType}] JSON string length: ${serviceAccountJson.trim().length}`);
-  }
-  
-  // For local development, prioritize file path over JSON string
-  // Try file path first if it's set (for local development)
-  if (serviceAccountPath) {
-    try {
-      // Resolve the path - handle both absolute and relative paths
-      const resolvedPath = path.isAbsolute(serviceAccountPath) 
-        ? serviceAccountPath 
-        : path.resolve(process.cwd(), serviceAccountPath);
-      
-      // Check if file exists
-      if (!fs.existsSync(resolvedPath)) {
-        console.error(`[${projectType}] Service account file not found at: ${resolvedPath}`);
-        console.error(`[${projectType}] Environment variable ${pathKey} = ${serviceAccountPath}`);
-        console.error(`[${projectType}] Current working directory: ${process.cwd()}`);
-        // Fall through to try JSON string if file doesn't exist
-      } else {
-        // Read and parse the file
-        const fileContent = fs.readFileSync(resolvedPath, 'utf8');
-        const serviceAccount = JSON.parse(fileContent);
-        
-        // Validate required fields
-        if (!serviceAccount.private_key || !serviceAccount.client_email || !serviceAccount.project_id) {
-          console.error(`[${projectType}] Service account file missing required fields at: ${resolvedPath}`);
-          // Fall through to try JSON string
-        } else {
-          // Success - return the config
-          // The private_key in JSON already has \n as escape sequences, JSON.parse converts them to actual newlines
-          let privateKey = serviceAccount.private_key;
-          
-          // If the private key has literal \n strings (shouldn't happen with proper JSON.parse, but just in case)
-          if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
-            privateKey = privateKey.replace(/\\n/g, '\n');
-          }
-          
-          // Validate the private key starts correctly
-          if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
-            console.error(`[${projectType}] Invalid private key format - doesn't start with BEGIN marker`);
-            console.error(`[${projectType}] First 50 chars: ${privateKey.substring(0, 50)}`);
-            // Fall through to try JSON string
-          } else {
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`[${projectType}] Successfully loaded service account from: ${resolvedPath}`);
-              console.log(`[${projectType}] Private key length: ${privateKey.length}, starts with: ${privateKey.substring(0, 30)}`);
-            }
-            
-            return {
-              projectId: serviceAccount.project_id,
-              privateKey: privateKey,
-              clientEmail: serviceAccount.client_email,
-            };
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error(`[${projectType}] Error loading service account from ${serviceAccountPath}:`, error.message);
-      if (error.code === 'ENOENT') {
-        console.error(`[${projectType}] File does not exist. Check your ${pathKey} environment variable.`);
-      } else if (error instanceof SyntaxError) {
-        console.error(`[${projectType}] Invalid JSON in service account file: ${serviceAccountPath}`);
-      }
-      // Fall through to try JSON string
-    }
-  }
-  
-  // Try JSON string (for Vercel/deployment, or if file path failed/not set)
-  // Skip if it's a placeholder
+  // Try JSON string first (for Vercel/production) - skip if placeholder
   if (serviceAccountJson && !isJsonPlaceholder) {
     try {
-      // If it's a JSON string, parse it
       const parsed = typeof serviceAccountJson === 'string' 
         ? JSON.parse(serviceAccountJson) 
         : serviceAccountJson;
@@ -115,19 +45,21 @@ function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccou
         return null;
       }
       
-      // The private_key in JSON string already has \n as escape sequences
-      // When parsed from JSON string, they become actual newlines
+      // Handle private key - it should have \n as escape sequences
       let privateKey = parsed.private_key;
-      
-      // If somehow we have literal \n strings, convert them
       if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
         privateKey = privateKey.replace(/\\n/g, '\n');
       }
       
-      // Validate the private key format
+      // Validate private key format
       if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
         console.error(`[${projectType}] Invalid private key format in JSON string`);
         return null;
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[${projectType}] Successfully loaded service account from environment variable ${envKey}`);
+        console.log(`[${projectType}] Project ID: ${parsed.project_id}`);
       }
       
       return {
@@ -136,36 +68,61 @@ function getServiceAccountConfig(projectType: FirebaseProjectType): ServiceAccou
         clientEmail: parsed.client_email,
       };
     } catch (error) {
-      console.error(`[${projectType}] Error parsing service account JSON:`, error);
+      console.error(`[${projectType}] Error parsing service account JSON from ${envKey}:`, error);
+      // Fall through to try file path
+    }
+  }
+  
+  // Try file path (for local development)
+  if (serviceAccountPath) {
+    try {
+      const resolvedPath = path.isAbsolute(serviceAccountPath) 
+        ? serviceAccountPath 
+        : path.resolve(process.cwd(), serviceAccountPath);
+      
+      if (!fs.existsSync(resolvedPath)) {
+        console.error(`[${projectType}] Service account file not found at: ${resolvedPath}`);
+        return null;
+      }
+      
+      const fileContent = fs.readFileSync(resolvedPath, 'utf8');
+      const serviceAccount = JSON.parse(fileContent);
+      
+      if (!serviceAccount.private_key || !serviceAccount.client_email || !serviceAccount.project_id) {
+        console.error(`[${projectType}] Service account file missing required fields at: ${resolvedPath}`);
+        return null;
+      }
+      
+      let privateKey = serviceAccount.private_key;
+      if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
+        privateKey = privateKey.replace(/\\n/g, '\n');
+      }
+      
+      if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+        console.error(`[${projectType}] Invalid private key format in file`);
+        return null;
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[${projectType}] Successfully loaded service account from file: ${resolvedPath}`);
+        console.log(`[${projectType}] Project ID: ${serviceAccount.project_id}`);
+      }
+      
+      return {
+        projectId: serviceAccount.project_id,
+        privateKey: privateKey,
+        clientEmail: serviceAccount.client_email,
+      };
+    } catch (error: any) {
+      console.error(`[${projectType}] Error loading service account from file:`, error.message);
       return null;
     }
   }
   
-  // If JSON string is a placeholder, log a helpful message
-  if (isJsonPlaceholder && serviceAccountPath) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[${projectType}] JSON string appears to be a placeholder, using file path instead`);
-    }
-  } else if (isJsonPlaceholder && !serviceAccountPath) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn(`[${projectType}] JSON string is a placeholder. Set ${pathKey} in .env.local to use file path`);
-    }
-  }
-  
   // No credentials found
-  if (process.env.NODE_ENV === 'development') {
-    if (!serviceAccountPath && !serviceAccountJson) {
-      console.warn(`[${projectType}] No service account credentials found.`);
-      console.warn(`[${projectType}] Set ${envKey} (JSON string) or ${pathKey} (file path) in .env.local`);
-    } else if (serviceAccountPath) {
-      const resolvedPath = path.isAbsolute(serviceAccountPath) 
-        ? serviceAccountPath 
-        : path.resolve(process.cwd(), serviceAccountPath);
-      if (!fs.existsSync(resolvedPath)) {
-        console.warn(`[${projectType}] Service account file path set but file not found: ${resolvedPath}`);
-      }
-    }
-  }
+  console.error(`[${projectType}] Service account credentials not found.`);
+  console.error(`[${projectType}] Set ${envKey} (JSON string) for Vercel/production`);
+  console.error(`[${projectType}] Or set ${pathKey} (file path) for local development`);
   
   return null;
 }
@@ -186,20 +143,10 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
   // For admin, service account is REQUIRED - check before using any cached app
   if (projectType === 'admin' && !serviceAccount) {
     const envKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
-    const envValue = process.env[envKey];
-    // Always log in production to help debug Vercel issues
-    console.error(`[${projectType}] Service account not found. Diagnostics:`);
-    console.error(`[${projectType}] ${envKey} is ${envValue ? 'SET' : 'NOT SET'}`);
-    if (envValue) {
-      console.error(`[${projectType}] Value length: ${envValue.length}`);
-      const isPlaceholder = envValue.includes('...') || envValue.length < 200;
-      console.error(`[${projectType}] Is placeholder: ${isPlaceholder}`);
-      if (isPlaceholder) {
-        console.error(`[${projectType}] Service account JSON appears to be a placeholder. Please set a valid service account JSON in Vercel.`);
-      }
-    } else {
-      console.error(`[${projectType}] ${envKey} environment variable is NOT SET in Vercel. Please add it in Settings > Environment Variables.`);
-    }
+    const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_ADMIN`;
+    console.error(`[${projectType}] Admin Firebase service account required but not found.`);
+    console.error(`[${projectType}] Set ${envKey} (JSON string) in Vercel environment variables for production`);
+    console.error(`[${projectType}] Or set ${pathKey} (file path) in .env.local for local development`);
     throw new Error(
       `Admin Firebase service account required. ` +
       `Set ${envKey} in Vercel environment variables with valid service account JSON. ` +
@@ -257,8 +204,12 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
     const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()}`;
     console.log(`[${projectType}] Checking service account config...`);
     console.log(`[${projectType}] ${envKey}: ${process.env[envKey] ? 'SET' : 'NOT SET'}`);
-    console.log(`[${projectType}] ${pathKey}: ${process.env[pathKey] || 'NOT SET'}`);
+    console.log(`[${projectType}] ${pathKey}: ${process.env[pathKey] ? 'SET' : 'NOT SET'}`);
     console.log(`[${projectType}] Service account loaded: ${serviceAccount ? 'YES' : 'NO'}`);
+    if (serviceAccount) {
+      console.log(`[${projectType}] Project ID: ${serviceAccount.projectId}`);
+      console.log(`[${projectType}] Client Email: ${serviceAccount.clientEmail}`);
+    }
   }
   
   // Initialize app
@@ -275,9 +226,10 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
       
       // If project IDs match or if no specific project ID was requested, try the fallback
       if (!requestedProjectId || requestedProjectId === adminProjectId) {
+        const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
         console.warn(
           `[${projectType}] Service account credentials not found, attempting to use admin service account as fallback. ` +
-          `For better isolation, set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
+          `For better isolation, set ${envKey} in Vercel environment variables.`
         );
         // Use the admin service account's project ID
         const fallbackProjectId = adminProjectId;
@@ -306,37 +258,30 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
         } catch (fallbackError: any) {
           console.error(`[${projectType}] Failed to use admin service account as fallback:`, fallbackError.message);
           console.error(`[${projectType}] This usually means ${projectType} uses a different Firebase project than admin.`);
-          console.error(`[${projectType}] Please set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} with the correct service account JSON.`);
+          const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
+          console.error(`[${projectType}] Please set ${envKey} in Vercel environment variables with the correct service account JSON.`);
           // Fall through to throw the original error
         }
       } else {
+        const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
         console.warn(
           `[${projectType}] Cannot use admin service account fallback: project IDs don't match. ` +
           `Requested: ${requestedProjectId}, Admin: ${adminProjectId}. ` +
-          `Please set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} with the correct service account JSON.`
+          `Please set ${envKey} in Vercel environment variables with the correct service account JSON.`
         );
       }
     }
     
-    // In production, if credentials aren't set, log warning but don't throw
-    // This allows the app to work in limited mode
-    if (process.env.NODE_ENV === 'production') {
-      const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
-      console.error(
-        `[${projectType}] Service account credentials not found. ` +
-        `Set ${envKey} in Vercel environment variables (Settings > Environment Variables). ` +
-        `If using the same Firebase project as admin, the admin service account will be used as fallback.`
-      );
-      throw new Error(
-        `Service account credentials not found for ${projectType}. ` +
-        `Set ${envKey} in Vercel environment variables. ` +
-        `If ${projectType} uses the same Firebase project as admin, ensure FIREBASE_SERVICE_ACCOUNT_ADMIN is set.`
-      );
-    }
+    // Service account not found
+    const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
+    const pathKey = `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()}`;
+    console.error(`[${projectType}] Service account credentials not found.`);
+    console.error(`[${projectType}] Set ${envKey} (JSON string) in Vercel environment variables for production`);
+    console.error(`[${projectType}] Or set ${pathKey} (file path) in .env.local for local development`);
     throw new Error(
       `Service account credentials not found for ${projectType}. ` +
-      `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} or ` +
-      `FIREBASE_SERVICE_ACCOUNT_PATH_${projectType.toUpperCase()} environment variable.`
+      `Set ${envKey} in Vercel environment variables. ` +
+      `If ${projectType} uses the same Firebase project as admin, ensure FIREBASE_SERVICE_ACCOUNT_ADMIN is set.`
     );
   }
   
@@ -344,21 +289,8 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
     // Admin project - service account is REQUIRED, no ADC fallback
     // For token verification, Firebase Admin SDK requires credentials
     if (!serviceAccount) {
-      // Log detailed diagnostics
+      // This should have been caught earlier, but double-check
       const envKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
-      const envValue = process.env[envKey];
-      console.error(`[${projectType}] Service account not found. Diagnostics:`);
-      console.error(`[${projectType}] ${envKey} is ${envValue ? 'SET' : 'NOT SET'}`);
-      if (envValue) {
-        console.error(`[${projectType}] Value length: ${envValue.length}`);
-        const isPlaceholder = envValue.includes('...') || envValue.length < 200;
-        console.error(`[${projectType}] Is placeholder: ${isPlaceholder}`);
-        if (isPlaceholder) {
-          console.error(`[${projectType}] Service account JSON appears to be a placeholder. Please set a valid service account JSON.`);
-        }
-      }
-      
-      // Throw immediately - no ADC fallback
       throw new Error(
         `Admin Firebase service account required. ` +
         `Set ${envKey} in Vercel environment variables with valid service account JSON. ` +
@@ -449,16 +381,17 @@ export function getAdminAuth(projectType: FirebaseProjectType = 'admin'): Auth {
     const app = getAdminApp(projectType);
     return getAuth(app);
   } catch (error: any) {
-    // If initialization fails, throw a more descriptive error
-    if (error.message?.includes('service account') || 
-        error.message?.includes('Service account') ||
-        error.message?.includes('credential') ||
-        error.message?.includes('initialize')) {
-      throw new Error(
-        `Firebase Admin SDK initialization failed: ${error.message}. ` +
-        `Set FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()} in Vercel environment variables.`
-      );
-    }
+      // If initialization fails, throw a more descriptive error
+      if (error.message?.includes('service account') || 
+          error.message?.includes('Service account') ||
+          error.message?.includes('credential') ||
+          error.message?.includes('initialize')) {
+        const envKey = `FIREBASE_SERVICE_ACCOUNT_${projectType.toUpperCase()}`;
+        throw new Error(
+          `Firebase Admin SDK initialization failed: ${error.message}. ` +
+          `Set ${envKey} in Vercel environment variables with valid service account JSON.`
+        );
+      }
     throw error;
   }
 }
