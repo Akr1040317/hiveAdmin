@@ -179,34 +179,77 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
   const cacheKey = projectType;
   const appName = `admin-${projectType}`;
   
+  // Get service account config FIRST - we need to verify credentials before using cached apps
+  const serviceAccount = getServiceAccountConfig(projectType);
+  const projectId = getFirebaseProjectId(projectType);
+  
+  // For admin, service account is REQUIRED - check before using any cached app
+  if (projectType === 'admin' && !serviceAccount) {
+    const envKey = `FIREBASE_SERVICE_ACCOUNT_ADMIN`;
+    const envValue = process.env[envKey];
+    // Always log in production to help debug Vercel issues
+    console.error(`[${projectType}] Service account not found. Diagnostics:`);
+    console.error(`[${projectType}] ${envKey} is ${envValue ? 'SET' : 'NOT SET'}`);
+    if (envValue) {
+      console.error(`[${projectType}] Value length: ${envValue.length}`);
+      const isPlaceholder = envValue.includes('...') || envValue.length < 200;
+      console.error(`[${projectType}] Is placeholder: ${isPlaceholder}`);
+      if (isPlaceholder) {
+        console.error(`[${projectType}] Service account JSON appears to be a placeholder. Please set a valid service account JSON in Vercel.`);
+      }
+    } else {
+      console.error(`[${projectType}] ${envKey} environment variable is NOT SET in Vercel. Please add it in Settings > Environment Variables.`);
+    }
+    throw new Error(
+      `Admin Firebase service account required. ` +
+      `Set ${envKey} in Vercel environment variables with valid service account JSON. ` +
+      `See SETUP_ADMIN_SERVICE_ACCOUNT.md for instructions.`
+    );
+  }
+  
   // First check if Firebase app already exists (Firebase Admin SDK's own registry)
+  // Only use it if we have valid credentials
   try {
     const existingApp = getApp(appName);
     if (existingApp) {
-      // Cache it for future use
-      if (!appCache.has(cacheKey)) {
-        appCache.set(cacheKey, existingApp);
+      // Only cache and return if we have valid credentials (for admin) or if it's non-admin
+      if (projectType === 'admin' && serviceAccount) {
+        // Cache it for future use
+        if (!appCache.has(cacheKey)) {
+          appCache.set(cacheKey, existingApp);
+        }
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[${projectType}] Using existing Firebase Admin app: ${appName}`);
+        }
+        return existingApp;
+      } else if (projectType !== 'admin') {
+        // For non-admin, we can use existing app (fallback logic handles credentials)
+        if (!appCache.has(cacheKey)) {
+          appCache.set(cacheKey, existingApp);
+        }
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[${projectType}] Using existing Firebase Admin app: ${appName}`);
+        }
+        return existingApp;
       }
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[${projectType}] Using existing Firebase Admin app: ${appName}`);
-      }
-      return existingApp;
+      // If admin and no credentials, don't use cached app - will throw error below
     }
   } catch (error) {
     // App doesn't exist yet, continue to create it
   }
   
-  // Check our module-level cache
+  // Check our module-level cache (only if we have valid credentials for admin)
   if (appCache.has(cacheKey)) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[${projectType}] Using cached Firebase Admin app`);
+    if (projectType === 'admin' && !serviceAccount) {
+      // Don't use cached app if admin has no credentials
+      appCache.delete(cacheKey);
+    } else {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[${projectType}] Using cached Firebase Admin app`);
+      }
+      return appCache.get(cacheKey)!;
     }
-    return appCache.get(cacheKey)!;
   }
-  
-  // Get service account config
-  const serviceAccount = getServiceAccountConfig(projectType);
-  const projectId = getFirebaseProjectId(projectType);
   
   // Debug logging in development
   if (process.env.NODE_ENV === 'development') {
