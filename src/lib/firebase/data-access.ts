@@ -10,10 +10,30 @@ import {
 } from 'firebase-admin/firestore';
 
 /**
- * Get Firestore instance for a specific project
+ * Collections that should be stored in the admin Firebase project
+ * All other collections (like bugs) are stored in project-specific Firebase projects
  */
-export async function getProjectFirestore(projectId: ProjectId) {
+const ADMIN_COLLECTIONS = ['goals', 'features', 'tasks', 'meetings', 'calendar'];
+
+/**
+ * Determine if a collection should be stored in the admin Firebase project
+ */
+function shouldUseAdminFirestore(collectionName: string): boolean {
+  return ADMIN_COLLECTIONS.includes(collectionName);
+}
+
+/**
+ * Get Firestore instance for a specific project
+ * For admin collections (goals, features, tasks, meetings, calendar), always use admin Firebase
+ * For other collections (bugs, etc.), use project-specific Firebase
+ */
+export async function getProjectFirestore(projectId: ProjectId, collectionName?: string) {
   try {
+    // If this is an admin collection, always use admin Firebase
+    if (collectionName && shouldUseAdminFirestore(collectionName)) {
+      return getAdminFirestore('admin');
+    }
+    
     const project = getProject(projectId);
     if (!project) {
       throw new Error(`Project ${projectId} not found`);
@@ -27,7 +47,7 @@ export async function getProjectFirestore(projectId: ProjectId) {
     
     return getAdminFirestore(project.firebaseProjectType);
   } catch (error: any) {
-    console.error(`[getProjectFirestore] Error for project ${projectId}:`, error.message);
+    console.error(`[getProjectFirestore] Error for project ${projectId}, collection ${collectionName}:`, error.message);
     console.error(`[getProjectFirestore] Stack:`, error.stack);
     // Re-throw with more context
     throw new Error(`Failed to get Firestore for project ${projectId}: ${error.message}`);
@@ -36,12 +56,21 @@ export async function getProjectFirestore(projectId: ProjectId) {
 
 /**
  * Get a collection reference for a project
+ * Admin collections (goals, features, tasks, meetings, calendar) are stored in admin Firebase
+ * Other collections (bugs, etc.) are stored in project-specific Firebase
  */
 export async function getCollection(
   projectId: ProjectId,
   collectionName: string
 ): Promise<CollectionReference<DocumentData>> {
-  const db = await getProjectFirestore(projectId);
+  const db = await getProjectFirestore(projectId, collectionName);
+  
+  // Admin collections are stored in admin Firebase but still scoped by projectId
+  if (shouldUseAdminFirestore(collectionName)) {
+    return db.collection(`projects/${projectId}/${collectionName}`);
+  }
+  
+  // Project-specific collections use project-specific Firebase
   return db.collection(`projects/${projectId}/${collectionName}`);
 }
 
@@ -162,7 +191,7 @@ export async function getTopLevelCollection(
   projectId: ProjectId,
   collectionName: string
 ): Promise<CollectionReference<DocumentData>> {
-  const db = await getProjectFirestore(projectId);
+  const db = await getProjectFirestore(projectId, collectionName);
   return db.collection(collectionName);
 }
 
