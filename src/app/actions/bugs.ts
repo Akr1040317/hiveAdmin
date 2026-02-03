@@ -777,8 +777,7 @@ export async function unconvertBugToReport(
     throw new Error(`Bug ${bugId} was not converted from a report`);
   }
   
-  // Delete the bug
-  const collection = await getTopLevelCollection(projectId, 'feedbackAndBugs');
+  // Delete the bug (reuse existing collection variable)
   await collection.doc(bugId).delete();
   
   // Clear the convertedToBugId on the report so it shows up in pending_reports again
