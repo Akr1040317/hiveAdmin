@@ -413,8 +413,14 @@ export function getAdminApp(projectType: FirebaseProjectType): App {
 }
 
 export function getAdminFirestore(projectType: FirebaseProjectType): Firestore {
-  const app = getAdminApp(projectType);
-  return getFirestore(app);
+  try {
+    const app = getAdminApp(projectType);
+    return getFirestore(app);
+  } catch (error: any) {
+    console.error(`[getAdminFirestore] Error getting Firestore for ${projectType}:`, error.message);
+    console.error(`[getAdminFirestore] Stack:`, error.stack);
+    throw new Error(`Failed to get Firestore for ${projectType}: ${error.message}`);
+  }
 }
 
 export function getAdminAuth(projectType: FirebaseProjectType = 'admin'): Auth {

@@ -31,6 +31,7 @@ export async function getProjectFirestore(projectId: ProjectId, collectionName?:
   try {
     // If this is an admin collection, always use admin Firebase
     if (collectionName && shouldUseAdminFirestore(collectionName)) {
+      console.log(`[getProjectFirestore] Routing ${collectionName} collection to admin Firebase for project ${projectId}`);
       return getAdminFirestore('admin');
     }
     
@@ -45,12 +46,13 @@ export async function getProjectFirestore(projectId: ProjectId, collectionName?:
       return getFirestore(app, 'oman');
     }
     
+    console.log(`[getProjectFirestore] Using project-specific Firebase (${project.firebaseProjectType}) for collection ${collectionName || 'unknown'} in project ${projectId}`);
     return getAdminFirestore(project.firebaseProjectType);
   } catch (error: any) {
     console.error(`[getProjectFirestore] Error for project ${projectId}, collection ${collectionName}:`, error.message);
     console.error(`[getProjectFirestore] Stack:`, error.stack);
     // Re-throw with more context
-    throw new Error(`Failed to get Firestore for project ${projectId}: ${error.message}`);
+    throw new Error(`Failed to get Firestore for project ${projectId}, collection ${collectionName}: ${error.message}`);
   }
 }
 
