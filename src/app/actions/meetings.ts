@@ -12,6 +12,13 @@ import {
 import { ProjectId, getProject } from '@/lib/projects';
 import { generateICSFile } from '@/lib/calendar-invite';
 import { format } from 'date-fns';
+import {
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  generateMeetLinkForEvent,
+  CreateCalendarEventOptions,
+} from '@/lib/google/calendar';
 
 export interface Meeting {
   id: string;
@@ -27,6 +34,10 @@ export interface Meeting {
   inviteSent?: Date; // Timestamp when invite was last sent
   reminderSent?: Date; // Timestamp when reminder was last sent
   reminderDays?: number[]; // Days before meeting to send reminders (e.g., [1, 7])
+  googleCalendarEventId?: string; // Google Calendar event ID
+  googleMeetLink?: string; // Google Meet link
+  googleCalendarSynced?: boolean; // Whether synced to Google Calendar
+  googleCalendarHtmlLink?: string; // Link to open event in Google Calendar
   createdAt: Date;
   updatedAt: Date;
 }
@@ -356,5 +367,169 @@ export async function sendMeetingReminder(
       errorStack: error instanceof Error ? error.stack : undefined,
     });
     throw error;
+  }
+}
+
+/**
+ * Sync meeting to Google Calendar (create or update)
+ * Creates a Google Calendar event and stores the event ID and Meet link
+ */
+export async function syncMeetingToGoogleCalendar(
+  projectId: ProjectId,
+  meetingId: string,
+  generateMeetLink: boolean = true,
+  token?: string | null
+): Promise<{ eventId: string; meetLink?: string; htmlLink: string }> {
+  await requireAuth(token);
+  
+  // Get meeting data
+  const meeting = await getDocumentData<Meeting>(projectId, 'meetings', meetingId);
+  if (!meeting) {
+    throw new Error(`Meeting ${meetingId} not found`);
+  }
+
+  const startDate = new Date(meeting.startsAt);
+  const durationMinutes = meeting.duration || 60;
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+
+  // Build description from agenda and notes
+  let description = '';
+  if (meeting.agenda) {
+    description += `Agenda: ${meeting.agenda}`;
+  }
+  if (meeting.notes) {
+    if (description) description += '\n\n';
+    description += `Notes: ${meeting.notes}`;
+  }
+  if (meeting.actionItems && meeting.actionItems.length > 0) {
+    if (description) description += '\n\n';
+    description += `Action Items:\n${meeting.actionItems.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}`;
+  }
+
+  try {
+    let result: { eventId: string; meetLink?: string; htmlLink: string };
+
+    if (meeting.googleCalendarEventId) {
+      // Update existing event
+      const updateResult = await updateCalendarEvent(meeting.googleCalendarEventId, {
+        summary: meeting.title,
+        description: description || undefined,
+        startTime: startDate,
+        endTime: endDate,
+        location: meeting.location,
+        attendees: meeting.attendees,
+        generateMeetLink: generateMeetLink && !meeting.googleMeetLink,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      result = {
+        eventId: meeting.googleCalendarEventId,
+        meetLink: updateResult.meetLink,
+        htmlLink: updateResult.htmlLink,
+      };
+    } else {
+      // Create new event
+      result = await createCalendarEvent({
+        summary: meeting.title,
+        description: description || undefined,
+        startTime: startDate,
+        endTime: endDate,
+        location: meeting.location,
+        attendees: meeting.attendees,
+        generateMeetLink,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+    }
+
+    // Update meeting with Google Calendar info
+    await updateDocument<Meeting>(projectId, 'meetings', meetingId, {
+      googleCalendarEventId: result.eventId,
+      googleMeetLink: result.meetLink || meeting.googleMeetLink,
+      googleCalendarSynced: true,
+      googleCalendarHtmlLink: result.htmlLink,
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[Google Calendar] Failed to sync meeting:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate Google Meet link for an existing meeting
+ */
+export async function generateMeetLinkForMeeting(
+  projectId: ProjectId,
+  meetingId: string,
+  token?: string | null
+): Promise<string> {
+  await requireAuth(token);
+  
+  // Get meeting data
+  const meeting = await getDocumentData<Meeting>(projectId, 'meetings', meetingId);
+  if (!meeting) {
+    throw new Error(`Meeting ${meetingId} not found`);
+  }
+
+  if (!meeting.googleCalendarEventId) {
+    throw new Error('Meeting must be synced to Google Calendar first');
+  }
+
+  try {
+    const meetLink = await generateMeetLinkForEvent(meeting.googleCalendarEventId);
+
+    // Update meeting with Meet link
+    await updateDocument<Meeting>(projectId, 'meetings', meetingId, {
+      googleMeetLink: meetLink,
+    });
+
+    return meetLink;
+  } catch (error) {
+    console.error('[Google Calendar] Failed to generate Meet link:', error);
+    throw error;
+  }
+}
+
+/**
+ * Unsync meeting from Google Calendar (delete the event)
+ */
+export async function unsyncMeetingFromGoogleCalendar(
+  projectId: ProjectId,
+  meetingId: string,
+  token?: string | null
+): Promise<void> {
+  await requireAuth(token);
+  
+  // Get meeting data
+  const meeting = await getDocumentData<Meeting>(projectId, 'meetings', meetingId);
+  if (!meeting) {
+    throw new Error(`Meeting ${meetingId} not found`);
+  }
+
+  if (!meeting.googleCalendarEventId) {
+    // Already unsynced
+    return;
+  }
+
+  try {
+    await deleteCalendarEvent(meeting.googleCalendarEventId);
+
+    // Clear Google Calendar info from meeting
+    await updateDocument<Meeting>(projectId, 'meetings', meetingId, {
+      googleCalendarEventId: undefined,
+      googleMeetLink: undefined,
+      googleCalendarSynced: false,
+      googleCalendarHtmlLink: undefined,
+    });
+  } catch (error) {
+    console.error('[Google Calendar] Failed to unsync meeting:', error);
+    // Don't throw - allow unsync even if event was already deleted externally
+    // Still clear the local fields
+    await updateDocument<Meeting>(projectId, 'meetings', meetingId, {
+      googleCalendarEventId: undefined,
+      googleMeetLink: undefined,
+      googleCalendarSynced: false,
+      googleCalendarHtmlLink: undefined,
+    });
   }
 }

@@ -8,7 +8,7 @@ import { ViewTabs } from '@/components/shared/ViewTabs';
 import { TableView, TableColumn } from '@/components/shared/TableView';
 import { CalendarView } from '@/components/shared/CalendarView';
 import { DetailDrawer } from '@/components/shared/DetailDrawer';
-import { Meeting, getMeetings, createMeeting, updateMeeting, deleteMeeting, sendMeetingInvite, sendMeetingReminder } from '@/app/actions/meetings';
+import { Meeting, getMeetings, createMeeting, updateMeeting, deleteMeeting, sendMeetingInvite, sendMeetingReminder, syncMeetingToGoogleCalendar, generateMeetLinkForMeeting, unsyncMeetingFromGoogleCalendar } from '@/app/actions/meetings';
 import { useServerAction } from '@/hooks/useServerAction';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
@@ -18,7 +18,7 @@ import { getTeamMembers, supportsAssignment } from '@/lib/team-members';
 import { AttendeeSelector } from '@/components/shared/AttendeeSelector';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { Mail, Clock } from 'lucide-react';
+import { Mail, Clock, Calendar, Video, ExternalLink, CheckCircle2, XCircle } from 'lucide-react';
 
 function MeetingsContent() {
   const { project, projectId } = useProject();
@@ -45,6 +45,8 @@ function MeetingsContent() {
   });
   const [sendingInvite, setSendingInvite] = useState(false);
   const [sendingReminder, setSendingReminder] = useState(false);
+  const [syncingToGoogle, setSyncingToGoogle] = useState(false);
+  const [generatingMeetLink, setGeneratingMeetLink] = useState(false);
 
   const { execute: loadMeetings, loading } = useServerAction(getMeetings);
   const { execute: handleCreateMeeting } = useServerAction(createMeeting);
@@ -52,6 +54,9 @@ function MeetingsContent() {
   const { execute: handleDeleteMeeting } = useServerAction(deleteMeeting);
   const { execute: handleSendInvite } = useServerAction(sendMeetingInvite);
   const { execute: handleSendReminder } = useServerAction(sendMeetingReminder);
+  const { execute: handleSyncToGoogle } = useServerAction(syncMeetingToGoogleCalendar);
+  const { execute: handleGenerateMeetLink } = useServerAction(generateMeetLinkForMeeting);
+  const { execute: handleUnsyncFromGoogle } = useServerAction(unsyncMeetingFromGoogleCalendar);
 
   useEffect(() => {
     if (projectId) {
@@ -496,6 +501,146 @@ function MeetingsContent() {
                 })}
               </div>
             </div>
+
+            {/* Google Calendar Integration */}
+            {selectedMeeting && (
+              <div className="border-t border-border-subtle pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Google Calendar
+                  </label>
+                  {selectedMeeting.googleCalendarSynced ? (
+                    <div className="flex items-center gap-2 text-green-400 text-xs">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Synced
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-500 text-xs">
+                      <XCircle className="w-3 h-3" />
+                      Not synced
+                    </div>
+                  )}
+                </div>
+
+                {selectedMeeting.googleMeetLink && (
+                  <div className="bg-background-card p-3 rounded-md border border-border-subtle">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Video className="w-4 h-4 text-blue-400" />
+                      <span className="text-xs font-medium text-gray-300">Google Meet Link</span>
+                    </div>
+                    <a
+                      href={selectedMeeting.googleMeetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:text-blue-300 break-all"
+                    >
+                      {selectedMeeting.googleMeetLink}
+                    </a>
+                  </div>
+                )}
+
+                {selectedMeeting.googleCalendarHtmlLink && (
+                  <a
+                    href={selectedMeeting.googleCalendarHtmlLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Open in Google Calendar
+                  </a>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  {!selectedMeeting.googleCalendarSynced ? (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={async () => {
+                        if (!projectId || !selectedMeeting) return;
+                        setSyncingToGoogle(true);
+                        try {
+                          await handleSyncToGoogle(projectId, selectedMeeting.id, true);
+                          alert('Meeting synced to Google Calendar successfully!');
+                          const updated = await loadMeetings(projectId);
+                          if (updated) setMeetings(updated);
+                        } catch (error) {
+                          console.error('Failed to sync to Google Calendar:', error);
+                          alert(`Failed to sync: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        } finally {
+                          setSyncingToGoogle(false);
+                        }
+                      }}
+                      disabled={syncingToGoogle}
+                      accent={accent}
+                      className="flex items-center gap-2"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      {syncingToGoogle ? 'Syncing...' : 'Sync to Google Calendar'}
+                    </Button>
+                  ) : (
+                    <>
+                      {!selectedMeeting.googleMeetLink && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            if (!projectId || !selectedMeeting) return;
+                            setGeneratingMeetLink(true);
+                            try {
+                              await handleGenerateMeetLink(projectId, selectedMeeting.id);
+                              alert('Google Meet link generated successfully!');
+                              const updated = await loadMeetings(projectId);
+                              if (updated) setMeetings(updated);
+                            } catch (error) {
+                              console.error('Failed to generate Meet link:', error);
+                              alert(`Failed to generate Meet link: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            } finally {
+                              setGeneratingMeetLink(false);
+                            }
+                          }}
+                          disabled={generatingMeetLink}
+                          className="flex items-center gap-2"
+                        >
+                          <Video className="w-4 h-4" />
+                          {generatingMeetLink ? 'Generating...' : 'Generate Meet Link'}
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          if (!projectId || !selectedMeeting) return;
+                          if (!confirm('Are you sure you want to unsync this meeting from Google Calendar? The Google Calendar event will be deleted.')) {
+                            return;
+                          }
+                          setSyncingToGoogle(true);
+                          try {
+                            await handleUnsyncFromGoogle(projectId, selectedMeeting.id);
+                            alert('Meeting unsynced from Google Calendar successfully!');
+                            const updated = await loadMeetings(projectId);
+                            if (updated) setMeetings(updated);
+                          } catch (error) {
+                            console.error('Failed to unsync from Google Calendar:', error);
+                            alert(`Failed to unsync: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                          } finally {
+                            setSyncingToGoogle(false);
+                          }
+                        }}
+                        disabled={syncingToGoogle}
+                        className="flex items-center gap-2 text-red-400 hover:text-red-300"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Unsync from Google Calendar
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             {selectedMeeting && projectId && supportsAssignment(projectId) && (

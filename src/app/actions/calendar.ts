@@ -12,6 +12,12 @@ import {
 import { ProjectId, getProject } from '@/lib/projects';
 import { generateCalendarItemICS } from '@/lib/calendar-invite';
 import { format } from 'date-fns';
+import {
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  generateMeetLinkForEvent,
+} from '@/lib/google/calendar';
 
 export interface CalendarItem {
   id: string;
@@ -24,6 +30,10 @@ export interface CalendarItem {
   attendees?: string[]; // Array of email addresses
   reminderDays?: number[]; // Days before event to send reminders
   reminderSent?: Date; // Timestamp when reminder was last sent
+  googleCalendarEventId?: string; // Google Calendar event ID
+  googleMeetLink?: string; // Google Meet link (only for events that need Meet)
+  googleCalendarSynced?: boolean; // Whether synced to Google Calendar
+  googleCalendarHtmlLink?: string; // Link to open event in Google Calendar
   createdAt: Date;
   updatedAt: Date;
 }
@@ -343,5 +353,162 @@ export async function sendCalendarItemReminder(
       errorStack: error instanceof Error ? error.stack : undefined,
     });
     throw error;
+  }
+}
+
+/**
+ * Sync calendar item to Google Calendar (create or update)
+ * Creates a Google Calendar event and stores the event ID
+ */
+export async function syncCalendarItemToGoogleCalendar(
+  projectId: ProjectId,
+  itemId: string,
+  generateMeetLink: boolean = false,
+  token?: string | null
+): Promise<{ eventId: string; meetLink?: string; htmlLink: string }> {
+  await requireAuth(token);
+  
+  // Get calendar item data
+  const item = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  if (!item) {
+    throw new Error(`Calendar item ${itemId} not found`);
+  }
+
+  // Parse date and time
+  let startDate = new Date(item.date);
+  if (item.time) {
+    const [hours, minutes] = item.time.split(':').map(Number);
+    startDate.setHours(hours, minutes || 0, 0, 0);
+  } else {
+    // Default to 9 AM if no time specified
+    startDate.setHours(9, 0, 0, 0);
+  }
+
+  // Default duration: 1 hour for events, all day for deadlines/milestones
+  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+  try {
+    let result: { eventId: string; meetLink?: string; htmlLink: string };
+
+    if (item.googleCalendarEventId) {
+      // Update existing event
+      const updateResult = await updateCalendarEvent(item.googleCalendarEventId, {
+        summary: item.title,
+        description: item.notes || undefined,
+        startTime: startDate,
+        endTime: endDate,
+        attendees: item.attendees,
+        generateMeetLink: generateMeetLink && !item.googleMeetLink,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      result = {
+        eventId: item.googleCalendarEventId,
+        meetLink: updateResult.meetLink,
+        htmlLink: updateResult.htmlLink,
+      };
+    } else {
+      // Create new event
+      result = await createCalendarEvent({
+        summary: item.title,
+        description: item.notes || undefined,
+        startTime: startDate,
+        endTime: endDate,
+        attendees: item.attendees,
+        generateMeetLink,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+    }
+
+    // Update calendar item with Google Calendar info
+    await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
+      googleCalendarEventId: result.eventId,
+      googleMeetLink: result.meetLink || item.googleMeetLink,
+      googleCalendarSynced: true,
+      googleCalendarHtmlLink: result.htmlLink,
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[Google Calendar] Failed to sync calendar item:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate Google Meet link for an existing calendar item
+ */
+export async function generateMeetLinkForCalendarItem(
+  projectId: ProjectId,
+  itemId: string,
+  token?: string | null
+): Promise<string> {
+  await requireAuth(token);
+  
+  // Get calendar item data
+  const item = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  if (!item) {
+    throw new Error(`Calendar item ${itemId} not found`);
+  }
+
+  if (!item.googleCalendarEventId) {
+    throw new Error('Calendar item must be synced to Google Calendar first');
+  }
+
+  try {
+    const meetLink = await generateMeetLinkForEvent(item.googleCalendarEventId);
+
+    // Update calendar item with Meet link
+    await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
+      googleMeetLink: meetLink,
+    });
+
+    return meetLink;
+  } catch (error) {
+    console.error('[Google Calendar] Failed to generate Meet link:', error);
+    throw error;
+  }
+}
+
+/**
+ * Unsync calendar item from Google Calendar (delete the event)
+ */
+export async function unsyncCalendarItemFromGoogleCalendar(
+  projectId: ProjectId,
+  itemId: string,
+  token?: string | null
+): Promise<void> {
+  await requireAuth(token);
+  
+  // Get calendar item data
+  const item = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  if (!item) {
+    throw new Error(`Calendar item ${itemId} not found`);
+  }
+
+  if (!item.googleCalendarEventId) {
+    // Already unsynced
+    return;
+  }
+
+  try {
+    await deleteCalendarEvent(item.googleCalendarEventId);
+
+    // Clear Google Calendar info from calendar item
+    await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
+      googleCalendarEventId: undefined,
+      googleMeetLink: undefined,
+      googleCalendarSynced: false,
+      googleCalendarHtmlLink: undefined,
+    });
+  } catch (error) {
+    console.error('[Google Calendar] Failed to unsync calendar item:', error);
+    // Don't throw - allow unsync even if event was already deleted externally
+    // Still clear the local fields
+    await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
+      googleCalendarEventId: undefined,
+      googleMeetLink: undefined,
+      googleCalendarSynced: false,
+      googleCalendarHtmlLink: undefined,
+    });
   }
 }
