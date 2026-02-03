@@ -151,22 +151,45 @@ function GoalsContent() {
     resetNewGoalData();
   };
 
-  const handleUpdate = async (updates: Partial<Goal>) => {
-    if (!projectId || !selectedGoal) return;
-    await handleUpdateGoal(projectId, selectedGoal.id, updates);
-    const updated = await loadGoals(projectId);
-    if (updated) setGoals(updated);
-    setSelectedGoal({ ...selectedGoal, ...updates });
+  const handleUpdate = async (updates: Partial<Goal>, goal?: Goal) => {
+    const goalToUpdate = goal || selectedGoal;
+    if (!projectId || !goalToUpdate) return;
+    
+    try {
+      await handleUpdateGoal(projectId, goalToUpdate.id, updates);
+      const updated = await loadGoals(projectId);
+      if (updated) {
+        setGoals(updated);
+        // Update selectedGoal if it's the one being updated
+        if (selectedGoal && selectedGoal.id === goalToUpdate.id) {
+          setSelectedGoal({ ...selectedGoal, ...updates });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update goal:', error);
+      alert('Failed to update goal. Please try again.');
+    }
   };
 
-  const handleDelete = async () => {
-    if (!projectId || !selectedGoal) return;
-    if (confirm('Are you sure you want to delete this goal?')) {
-      await handleDeleteGoal(projectId, selectedGoal.id);
+  const handleDelete = async (goal?: Goal) => {
+    const goalToDelete = goal || selectedGoal;
+    if (!projectId || !goalToDelete) return;
+    
+    // Note: GoalCard already shows a confirm dialog, so we don't need another one here
+    try {
+      await handleDeleteGoal(projectId, goalToDelete.id);
       const updated = await loadGoals(projectId);
-      if (updated) setGoals(updated);
-      setIsDrawerOpen(false);
-      setSelectedGoal(null);
+      if (updated) {
+        setGoals(updated);
+      }
+      // Close drawer and clear selection if deleting the selected goal
+      if (selectedGoal && selectedGoal.id === goalToDelete.id) {
+        setIsDrawerOpen(false);
+        setSelectedGoal(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete goal:', error);
+      alert('Failed to delete goal. Please try again.');
     }
   };
 
@@ -470,7 +493,7 @@ function GoalsContent() {
                             setSelectedGoal(g);
                             setIsDrawerOpen(true);
                           }}
-                          onDelete={handleDelete}
+                          onDelete={(g) => handleDelete(g)}
                           onUpdateProgress={handleUpdateProgress}
                           onToggleComplete={handleToggleComplete}
                           accent={accent}
@@ -502,7 +525,7 @@ function GoalsContent() {
                   setSelectedGoal(g);
                   setIsDrawerOpen(true);
                 }}
-                onDelete={handleDelete}
+                onDelete={(g) => handleDelete(g)}
                 onUpdateProgress={handleUpdateProgress}
                 onToggleComplete={handleToggleComplete}
                 accent={accent}
@@ -545,7 +568,7 @@ function GoalsContent() {
         title={selectedGoal?.title || newGoalData.title || 'New Goal'}
         onTitleChange={(title) => {
           if (selectedGoal) {
-            handleUpdate({ title });
+            handleUpdate({ title }, selectedGoal);
           } else {
             setNewGoalData(prev => ({ ...prev, title }));
           }
@@ -562,7 +585,7 @@ function GoalsContent() {
             })),
             onChange: (value) => {
               if (selectedGoal) {
-                handleUpdate({ category: value as GoalCategory });
+                handleUpdate({ category: value as GoalCategory }, selectedGoal);
               } else {
                 setNewGoalData(prev => ({ ...prev, category: value as GoalCategory }));
               }
@@ -576,7 +599,7 @@ function GoalsContent() {
             options: goalTypeOptions,
             onChange: (value) => {
               if (selectedGoal) {
-                handleUpdate({ goalType: value as Goal['goalType'] });
+                handleUpdate({ goalType: value as Goal['goalType'] }, selectedGoal);
               } else {
                 setNewGoalData(prev => ({ ...prev, goalType: value as Goal['goalType'] }));
               }
@@ -594,7 +617,7 @@ function GoalsContent() {
             onChange: (value) => {
               const period = value === 'monthly' ? monthlyPeriod : weeklyPeriod;
               if (selectedGoal) {
-                handleUpdate({ type: value as Goal['type'], period });
+                handleUpdate({ type: value as Goal['type'], period }, selectedGoal);
               } else {
                 setNewGoalData(prev => ({ ...prev, type: value as Goal['type'], period }));
               }
@@ -609,7 +632,7 @@ function GoalsContent() {
               onChange: (value) => {
                 const numValue = typeof value === 'number' ? value : (parseFloat(String(value)) || 100);
                 if (selectedGoal) {
-                  handleUpdate({ targetValue: numValue });
+                  handleUpdate({ targetValue: numValue }, selectedGoal);
                 } else {
                   setNewGoalData(prev => ({ ...prev, targetValue: numValue }));
                 }
@@ -623,7 +646,7 @@ function GoalsContent() {
               onChange: (value) => {
                 const numValue = typeof value === 'number' ? value : (parseFloat(String(value)) || 0);
                 if (selectedGoal) {
-                  handleUpdate({ currentValue: numValue });
+                  handleUpdate({ currentValue: numValue }, selectedGoal);
                 } else {
                   setNewGoalData(prev => ({ ...prev, currentValue: numValue }));
                 }
@@ -636,7 +659,7 @@ function GoalsContent() {
               value: selectedGoal?.unit || newGoalData.unit || '',
               onChange: (value) => {
                 if (selectedGoal) {
-                  handleUpdate({ unit: value });
+                  handleUpdate({ unit: value }, selectedGoal);
                 } else {
                   setNewGoalData(prev => ({ ...prev, unit: value }));
                 }
@@ -651,7 +674,7 @@ function GoalsContent() {
             value: selectedGoal?.description || newGoalData.description || '',
             onChange: (value) => {
               if (selectedGoal) {
-                handleUpdate({ description: value });
+                handleUpdate({ description: value }, selectedGoal);
               } else {
                 setNewGoalData(prev => ({ ...prev, description: value }));
               }
@@ -671,7 +694,7 @@ function GoalsContent() {
             handleCreate(newGoalData);
           }
         }}
-        onDelete={selectedGoal ? handleDelete : undefined}
+        onDelete={selectedGoal ? () => handleDelete(selectedGoal) : undefined}
         accent={accent}
       />
     </div>
