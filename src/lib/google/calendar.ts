@@ -556,6 +556,65 @@ export async function listCalendars(): Promise<Array<{ id: string; summary: stri
 }
 
 /**
+ * List events via direct HTTP GET with API key in URL (workaround for 403 unregistered callers
+ * when the library does not send key with OAuth on serverless).
+ */
+async function listCalendarEventsDirect(
+  calendarId: string,
+  accessToken: string,
+  apiKey: string,
+  timeMin?: Date,
+  timeMax?: Date,
+  maxResults: number = 250
+): Promise<GoogleCalendarEventData[]> {
+  const url = new URL(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
+  );
+  url.searchParams.set('key', apiKey);
+  url.searchParams.set('maxResults', String(maxResults));
+  url.searchParams.set('singleEvents', 'true');
+  url.searchParams.set('orderBy', 'startTime');
+  if (timeMin) url.searchParams.set('timeMin', timeMin.toISOString());
+  if (timeMax) url.searchParams.set('timeMax', timeMax.toISOString());
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    let errData: { error?: { message?: string; code?: number } } = {};
+    try {
+      errData = JSON.parse(errBody);
+    } catch {
+      errData = { error: { message: errBody } };
+    }
+    const err = new Error(errData.error?.message || `HTTP ${res.status}`);
+    (err as any).code = errData.error?.code ?? res.status;
+    (err as any).response = { status: res.status, data: errData };
+    throw err;
+  }
+
+  const data = (await res.json()) as { items?: any[] };
+  const events = data.items || [];
+  return events.map((event: any) => ({
+    id: event.id!,
+    summary: event.summary || 'Untitled Event',
+    description: event.description,
+    start: event.start?.dateTime || event.start?.date || '',
+    end: event.end?.dateTime || event.end?.date || '',
+    location: event.location,
+    attendees: event.attendees?.map((a: any) => a.email).filter(Boolean),
+    hangoutLink: event.hangoutLink,
+    htmlLink: event.htmlLink,
+  }));
+}
+
+/**
  * List Google Calendar events
  */
 export async function listGoogleCalendarEvents(
@@ -567,7 +626,7 @@ export async function listGoogleCalendarEvents(
   console.log(`[Google Calendar] Time range: ${timeMin?.toISOString()} to ${timeMax?.toISOString()}`);
   console.log(`[Google Calendar] Max results: ${maxResults}`);
   
-  const client = await initializeCalendarClient();
+  await initializeCalendarClient();
   const calendarId = getCalendarId();
 
   console.log(`[Google Calendar] Target calendar ID: "${calendarId}"`);
@@ -620,6 +679,29 @@ export async function listGoogleCalendarEvents(
   console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
   console.log('[Google Calendar] ===== AUTHENTICATION VERIFIED =====');
 
+  // On serverless, use direct fetch with API key in URL to avoid 403 "unregistered callers"
+  // (the library may not send the key when OAuth is present).
+  if (currentApiKey && jwtClient.credentials.access_token) {
+    console.log('[Google Calendar] Using direct HTTP request with API key in URL (serverless fix)');
+    try {
+      const events = await listCalendarEventsDirect(
+        calendarId,
+        jwtClient.credentials.access_token,
+        currentApiKey,
+        timeMin,
+        timeMax,
+        maxResults
+      );
+      console.log('[Google Calendar] ===== API CALL SUCCESSFUL =====');
+      console.log(`[Google Calendar] Events found: ${events.length}`);
+      return events;
+    } catch (directErr: any) {
+      console.error('[Google Calendar] Direct request failed:', directErr?.message);
+      throw directErr;
+    }
+  }
+
+  const client = await initializeCalendarClient();
   try {
     console.log('[Google Calendar] ===== MAKING API CALL =====');
     console.log(`[Google Calendar] API Endpoint: calendar.events.list`);
