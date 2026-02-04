@@ -4,6 +4,13 @@ import { JWT } from 'google-auth-library';
 let calendarClient: any = null;
 let jwtClient: JWT | null = null;
 let currentServiceAccountProjectId: string | null = null;
+/** API key for project identity (sent on each request to avoid 403 unregistered callers on serverless) */
+let currentApiKey: string | null = null;
+
+/** Add API key to request params so it is sent as query param (required for serverless 403 fix) */
+function withApiKey<T extends Record<string, unknown>>(params: T): T & { key?: string } {
+  return { ...params, ...(currentApiKey && { key: currentApiKey }) } as T & { key?: string };
+}
 
 /**
  * Get Google Calendar ID from environment variable, trimming whitespace
@@ -227,6 +234,7 @@ async function initializeCalendarClient() {
   // in addition to the service account token — otherwise you get 403 "unregistered callers".
   // The service account (GOOGLE_SERVICE_ACCOUNT_JSON) must be from the same GCP project as the API key (e.g. prepcenter-750c1).
   const apiKey = process.env.GOOGLE_API_KEY?.trim();
+  currentApiKey = apiKey || null;
   if (apiKey) {
     console.log('[Google Calendar] Using GOOGLE_API_KEY for project identity (serverless fix)');
   } else {
@@ -359,12 +367,12 @@ export async function createCalendarEvent(
   }
 
   try {
-    const response = await client.events.insert({
+    const response = await client.events.insert(withApiKey({
       calendarId,
       requestBody: event,
       conferenceDataVersion: options.generateMeetLink ? 1 : 0,
       sendUpdates: 'all', // Send email notifications to attendees
-    });
+    }));
 
     const createdEvent = response.data;
     
@@ -390,10 +398,10 @@ export async function updateCalendarEvent(
   const calendarId = getCalendarId();
 
   // First, get the existing event
-  const existingEvent = await client.events.get({
+  const existingEvent = await client.events.get(withApiKey({
     calendarId,
     eventId,
-  });
+  }));
 
   if (!existingEvent.data) {
     throw new Error(`Google Calendar event ${eventId} not found`);
@@ -440,13 +448,13 @@ export async function updateCalendarEvent(
   }
 
   try {
-    const response = await client.events.update({
+    const response = await client.events.update(withApiKey({
       calendarId,
       eventId,
       requestBody: updatedEvent,
       conferenceDataVersion: options.generateMeetLink ? 1 : 0,
       sendUpdates: 'all',
-    });
+    }));
 
     const updated = response.data;
     
@@ -468,11 +476,11 @@ export async function deleteCalendarEvent(eventId: string): Promise<void> {
   const calendarId = getCalendarId();
 
   try {
-    await client.events.delete({
+    await client.events.delete(withApiKey({
       calendarId,
       eventId,
       sendUpdates: 'all', // Notify attendees of cancellation
-    });
+    }));
   } catch (error: any) {
     // If event not found, that's okay (might have been deleted externally)
     if (error.code === 404) {
@@ -500,10 +508,10 @@ export async function getCalendarEvent(eventId: string): Promise<{
   const calendarId = getCalendarId();
 
   try {
-    const response = await client.events.get({
+    const response = await client.events.get(withApiKey({
       calendarId,
       eventId,
-    });
+    }));
 
     const event = response.data;
     
@@ -533,7 +541,7 @@ export async function listCalendars(): Promise<Array<{ id: string; summary: stri
   const client = await initializeCalendarClient();
   
   try {
-    const response = await client.calendarList.list();
+    const response = await client.calendarList.list(withApiKey({}));
     const calendars = (response.data.items || []).map((cal: any) => ({
       id: cal.id,
       summary: cal.summary || 'Untitled Calendar',
@@ -624,14 +632,14 @@ export async function listGoogleCalendarEvents(
       orderBy: 'startTime',
     });
     
-    const response = await client.events.list({
+    const response = await client.events.list(withApiKey({
       calendarId,
       timeMin: timeMin?.toISOString(),
       timeMax: timeMax?.toISOString(),
       maxResults,
       singleEvents: true,
       orderBy: 'startTime',
-    });
+    }));
     
     console.log('[Google Calendar] ===== API CALL SUCCESSFUL =====');
     console.log(`[Google Calendar] Response status: ${response.status || 'unknown'}`);
@@ -743,10 +751,10 @@ export async function generateMeetLinkForEvent(eventId: string): Promise<string>
   const calendarId = getCalendarId();
 
   // Get existing event
-  const existingEvent = await client.events.get({
+  const existingEvent = await client.events.get(withApiKey({
     calendarId,
     eventId,
-  });
+  }));
 
   if (!existingEvent.data) {
     throw new Error(`Google Calendar event ${eventId} not found`);
@@ -771,12 +779,12 @@ export async function generateMeetLinkForEvent(eventId: string): Promise<string>
   };
 
   try {
-    const response = await client.events.patch({
+    const response = await client.events.patch(withApiKey({
       calendarId,
       eventId,
       requestBody: updatedEvent,
       conferenceDataVersion: 1,
-    });
+    }));
 
     const meetLink = response.data.hangoutLink || response.data.conferenceData?.entryPoints?.[0]?.uri;
     if (!meetLink) {
