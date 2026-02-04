@@ -18,23 +18,36 @@ function getCalendarId(): string {
  * Initialize Google Calendar API client using service account
  */
 async function initializeCalendarClient() {
+  console.log('[Google Calendar] ===== INITIALIZING CALENDAR CLIENT =====');
+  
   if (calendarClient && jwtClient) {
+    console.log('[Google Calendar] Using cached client');
     // Ensure JWT client is authorized - check if credentials exist and are not expired
     const credentials = jwtClient.credentials;
     if (!credentials || !credentials.access_token) {
+      console.log('[Google Calendar] Cached client missing access token, re-authorizing...');
       await jwtClient.authorize();
     } else if (credentials.expiry_date && credentials.expiry_date <= Date.now()) {
       // Token expired, re-authorize
+      console.log('[Google Calendar] Cached client token expired, re-authorizing...');
       await jwtClient.authorize();
+    } else {
+      console.log('[Google Calendar] Using valid cached credentials');
     }
     return calendarClient;
   }
 
+  console.log('[Google Calendar] Creating new client instance');
+  
   // Get service account credentials from environment
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const serviceAccountPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
 
+  console.log(`[Google Calendar] GOOGLE_SERVICE_ACCOUNT_JSON present: ${!!serviceAccountJson}`);
+  console.log(`[Google Calendar] GOOGLE_SERVICE_ACCOUNT_PATH present: ${!!serviceAccountPath}`);
+
   if (!serviceAccountJson && !serviceAccountPath) {
+    console.error('[Google Calendar] ERROR: No service account credentials found');
     throw new Error(
       'Google Calendar service account not configured. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_PATH environment variable.'
     );
@@ -43,15 +56,19 @@ async function initializeCalendarClient() {
   let credentials: any;
   
   if (serviceAccountJson) {
+    console.log('[Google Calendar] Parsing service account JSON from environment variable');
     try {
       // Try parsing as JSON string (for Vercel/production)
       credentials = typeof serviceAccountJson === 'string' 
         ? JSON.parse(serviceAccountJson) 
         : serviceAccountJson;
+      console.log('[Google Calendar] Successfully parsed service account JSON');
     } catch (error) {
+      console.error('[Google Calendar] ERROR: Failed to parse JSON:', error);
       throw new Error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON. Ensure it is valid JSON format.');
     }
   } else if (serviceAccountPath) {
+    console.log(`[Google Calendar] Loading service account from file: ${serviceAccountPath}`);
     // Load from file (for local development)
     const fs = require('fs');
     const path = require('path');
@@ -59,27 +76,53 @@ async function initializeCalendarClient() {
       ? serviceAccountPath
       : path.resolve(process.cwd(), serviceAccountPath);
     
+    console.log(`[Google Calendar] Resolved file path: ${resolvedPath}`);
+    
     if (!fs.existsSync(resolvedPath)) {
+      console.error(`[Google Calendar] ERROR: Service account file not found: ${resolvedPath}`);
       throw new Error(`Service account file not found: ${resolvedPath}`);
     }
     
+    console.log('[Google Calendar] Reading service account file...');
     credentials = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+    console.log('[Google Calendar] Successfully loaded service account from file');
   }
+  
+  // Log credential details (without sensitive data)
+  console.log(`[Google Calendar] Service Account Details:`);
+  console.log(`[Google Calendar]   - Project ID: ${credentials.project_id}`);
+  console.log(`[Google Calendar]   - Client Email: ${credentials.client_email}`);
+  console.log(`[Google Calendar]   - Private Key ID: ${credentials.private_key_id}`);
+  console.log(`[Google Calendar]   - Private Key Present: ${!!credentials.private_key}`);
+  console.log(`[Google Calendar]   - Private Key Length: ${credentials.private_key?.length || 0} chars`);
 
   // Handle private key formatting - ensure newlines are properly formatted
+  console.log('[Google Calendar] Formatting private key...');
   let privateKey = credentials.private_key;
   if (typeof privateKey === 'string') {
+    const originalLength = privateKey.length;
     // Replace escaped newlines with actual newlines if needed
     if (privateKey.includes('\\n') && !privateKey.includes('\n')) {
+      console.log('[Google Calendar] Replacing escaped newlines (\\n) with actual newlines');
       privateKey = privateKey.replace(/\\n/g, '\n');
     }
     // Also handle double-escaped newlines
     if (privateKey.includes('\\\\n')) {
+      console.log('[Google Calendar] Replacing double-escaped newlines (\\\\n) with actual newlines');
       privateKey = privateKey.replace(/\\\\n/g, '\n');
     }
+    console.log(`[Google Calendar] Private key formatted: ${originalLength} -> ${privateKey.length} chars`);
+  } else {
+    console.error('[Google Calendar] ERROR: Private key is not a string');
   }
 
   // Create JWT client with project_id to ensure proper authentication
+  console.log('[Google Calendar] Creating JWT client...');
+  console.log(`[Google Calendar]   - Email: ${credentials.client_email}`);
+  console.log(`[Google Calendar]   - Project ID: ${credentials.project_id}`);
+  console.log(`[Google Calendar]   - Scopes: https://www.googleapis.com/auth/calendar`);
+  console.log(`[Google Calendar]   - Subject: undefined (no domain-wide delegation)`);
+  
   jwtClient = new JWT({
     email: credentials.client_email,
     key: privateKey,
@@ -88,30 +131,51 @@ async function initializeCalendarClient() {
     subject: undefined, // Don't use domain-wide delegation unless needed
   });
   
-  console.log(`[Google Calendar] Initializing service account: ${credentials.client_email}`);
-  console.log(`[Google Calendar] Project ID: ${credentials.project_id}`);
-  console.log(`[Google Calendar] Scopes: https://www.googleapis.com/auth/calendar`);
+  console.log('[Google Calendar] JWT client created successfully');
   
   // Store project ID for error messages
   currentServiceAccountProjectId = credentials.project_id;
 
   // Authorize the client
+  console.log('[Google Calendar] ===== AUTHORIZING SERVICE ACCOUNT =====');
   try {
+    console.log('[Google Calendar] Calling jwtClient.authorize()...');
     const authResult = await jwtClient.authorize();
-    console.log('[Google Calendar] Service account authorized successfully');
-    console.log(`[Google Calendar] Access token received: ${jwtClient.credentials?.access_token ? 'Yes' : 'No'}`);
+    console.log('[Google Calendar] Authorization successful!');
+    console.log(`[Google Calendar] Auth result type: ${typeof authResult}`);
     
     // Verify credentials are set
     if (!jwtClient.credentials || !jwtClient.credentials.access_token) {
+      console.error('[Google Calendar] ERROR: Authorization succeeded but no access token received');
+      console.error(`[Google Calendar] Credentials object: ${JSON.stringify(jwtClient.credentials, null, 2)}`);
       throw new Error('Authorization succeeded but no access token received');
     }
+    
+    console.log(`[Google Calendar] Access token received: YES`);
+    console.log(`[Google Calendar] Access token length: ${jwtClient.credentials.access_token.length} chars`);
+    console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 20)}...`);
     
     // Log token expiry for debugging
     if (jwtClient.credentials.expiry_date) {
       const expiryDate = new Date(jwtClient.credentials.expiry_date);
+      const now = new Date();
+      const minutesUntilExpiry = Math.round((expiryDate.getTime() - now.getTime()) / 1000 / 60);
       console.log(`[Google Calendar] Token expires at: ${expiryDate.toISOString()}`);
+      console.log(`[Google Calendar] Token expires in: ${minutesUntilExpiry} minutes`);
+    } else {
+      console.log('[Google Calendar] Token expiry date not set');
     }
+    
+    console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
+    console.log('[Google Calendar] ===== AUTHORIZATION COMPLETE =====');
   } catch (error: any) {
+    console.error('[Google Calendar] ===== AUTHORIZATION FAILED =====');
+    console.error('[Google Calendar] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      response: error?.response?.data,
+      stack: error?.stack,
+    });
     console.error('Failed to authorize Google Calendar JWT client:', error);
     const errorMessage = error?.message || String(error);
     
@@ -133,14 +197,21 @@ async function initializeCalendarClient() {
   }
 
   // Initialize Calendar API with authenticated JWT client
-  // Explicitly set the project ID to ensure API calls are associated with the correct project
+  console.log('[Google Calendar] ===== INITIALIZING CALENDAR API CLIENT =====');
+  console.log(`[Google Calendar] API Version: v3`);
+  console.log(`[Google Calendar] Using authenticated JWT client`);
+  
   calendarClient = google.calendar({ 
     version: 'v3', 
     auth: jwtClient as any,
   });
   
-  console.log(`[Google Calendar] Calendar API client initialized for project: ${credentials.project_id}`);
-  console.log(`[Google Calendar] Service account email: ${credentials.client_email}`);
+  console.log(`[Google Calendar] Calendar API client created successfully`);
+  console.log(`[Google Calendar] Project: ${credentials.project_id}`);
+  console.log(`[Google Calendar] Service Account: ${credentials.client_email}`);
+  console.log('[Google Calendar] ===== CLIENT INITIALIZATION COMPLETE =====');
+  
+  return calendarClient;
 
   // Verify the client is properly initialized
   if (!calendarClient) {
@@ -448,17 +519,43 @@ export async function listGoogleCalendarEvents(
   timeMax?: Date,
   maxResults: number = 250
 ): Promise<GoogleCalendarEventData[]> {
+  console.log('[Google Calendar] ===== LISTING CALENDAR EVENTS =====');
+  console.log(`[Google Calendar] Time range: ${timeMin?.toISOString()} to ${timeMax?.toISOString()}`);
+  console.log(`[Google Calendar] Max results: ${maxResults}`);
+  
   const client = await initializeCalendarClient();
   const calendarId = getCalendarId();
 
-  // Log which calendar we're accessing for debugging
-  console.log(`[Google Calendar] Accessing calendar: "${calendarId}"`);
+  console.log(`[Google Calendar] Target calendar ID: "${calendarId}"`);
+
+  // Verify authentication before making API call
+  console.log('[Google Calendar] ===== VERIFYING AUTHENTICATION =====');
+  if (jwtClient && jwtClient.credentials) {
+    console.log(`[Google Calendar] JWT client exists: YES`);
+    console.log(`[Google Calendar] Credentials object exists: YES`);
+    console.log(`[Google Calendar] Access token present: ${jwtClient.credentials.access_token ? 'YES' : 'NO'}`);
+    if (jwtClient.credentials.access_token) {
+      console.log(`[Google Calendar] Access token length: ${jwtClient.credentials.access_token.length} chars`);
+      console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 30)}...`);
+    }
+    console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
+  } else {
+    console.error('[Google Calendar] ERROR: JWT client or credentials missing!');
+    throw new Error('JWT client not properly initialized');
+  }
+  console.log('[Google Calendar] ===== AUTHENTICATION VERIFIED =====');
 
   try {
-    // Log authentication state before making API call
-    if (jwtClient && jwtClient.credentials) {
-      console.log(`[Google Calendar] Making API call with access token: ${jwtClient.credentials.access_token ? 'Present' : 'Missing'}`);
-    }
+    console.log('[Google Calendar] ===== MAKING API CALL =====');
+    console.log(`[Google Calendar] API Endpoint: calendar.events.list`);
+    console.log(`[Google Calendar] Request parameters:`, {
+      calendarId,
+      timeMin: timeMin?.toISOString(),
+      timeMax: timeMax?.toISOString(),
+      maxResults,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
     
     const response = await client.events.list({
       calendarId,
@@ -469,11 +566,24 @@ export async function listGoogleCalendarEvents(
       orderBy: 'startTime',
     });
     
+    console.log('[Google Calendar] ===== API CALL SUCCESSFUL =====');
+    console.log(`[Google Calendar] Response status: ${response.status || 'unknown'}`);
+    console.log(`[Google Calendar] Response headers:`, JSON.stringify(response.headers || {}, null, 2));
+    
     const eventCount = response.data.items?.length || 0;
-    console.log(`[Google Calendar] Found ${eventCount} events in calendar "${calendarId}"`);
+    console.log(`[Google Calendar] Events found: ${eventCount}`);
+    console.log(`[Google Calendar] Calendar timezone: ${response.data.timeZone || 'not specified'}`);
+    console.log(`[Google Calendar] Calendar summary: ${response.data.summary || 'not specified'}`);
     
     if (eventCount === 0) {
-      console.warn(`[Google Calendar] No events found. Make sure calendar "${calendarId}" is correct and shared with the service account.`);
+      console.warn(`[Google Calendar] WARNING: No events found in calendar "${calendarId}"`);
+      console.warn(`[Google Calendar] This could mean:`);
+      console.warn(`[Google Calendar]   1. Calendar is empty`);
+      console.warn(`[Google Calendar]   2. Calendar ID is incorrect`);
+      console.warn(`[Google Calendar]   3. Calendar is not shared with service account`);
+      console.warn(`[Google Calendar]   4. Time range doesn't match any events`);
+    } else {
+      console.log(`[Google Calendar] First event:`, response.data.items?.[0]?.summary || 'N/A');
     }
 
     const events = response.data.items || [];
@@ -490,29 +600,49 @@ export async function listGoogleCalendarEvents(
       htmlLink: event.htmlLink,
     }));
   } catch (error: any) {
-    console.error('Error listing Google Calendar events:', error);
+    console.error('[Google Calendar] ===== API CALL FAILED =====');
+    console.error('[Google Calendar] Error type:', error?.constructor?.name || typeof error);
+    console.error('[Google Calendar] Error message:', error?.message);
+    console.error('[Google Calendar] Error code:', error?.code);
+    console.error('[Google Calendar] Error status:', error?.response?.status);
+    console.error('[Google Calendar] Error status text:', error?.response?.statusText);
+    console.error('[Google Calendar] Error response data:', JSON.stringify(error?.response?.data || {}, null, 2));
+    console.error('[Google Calendar] Error response headers:', JSON.stringify(error?.response?.headers || {}, null, 2));
+    console.error('[Google Calendar] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    
     const errorMessage = error?.message || String(error);
     
     // Provide specific guidance for common errors
     if (errorMessage.includes('unregistered callers') || errorMessage.includes('API Key')) {
       const projectId = currentServiceAccountProjectId || 'unknown';
+      console.error(`[Google Calendar] DIAGNOSIS: Unregistered callers error`);
+      console.error(`[Google Calendar]   - Project ID: ${projectId}`);
+      console.error(`[Google Calendar]   - Service Account: ${jwtClient?.email || 'unknown'}`);
+      console.error(`[Google Calendar]   - Access Token Present: ${jwtClient?.credentials?.access_token ? 'YES' : 'NO'}`);
+      console.error(`[Google Calendar]   - Enable API: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`);
       throw new Error(
         `Failed to list Google Calendar events: ${errorMessage}. ` +
         `Ensure the Google Calendar API is enabled in Google Cloud Console for project "${projectId}". ` +
         `Enable API here: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`
       );
     } else if (error.code === 403) {
+      console.error(`[Google Calendar] DIAGNOSIS: Access denied (403)`);
+      console.error(`[Google Calendar]   - Calendar ID: ${calendarId}`);
+      console.error(`[Google Calendar]   - Service Account: ${jwtClient?.email || 'unknown'}`);
       throw new Error(
         `Access denied (403): ${errorMessage}. ` +
         `Check that the calendar "${calendarId}" is shared with the service account email.`
       );
     } else if (error.code === 404) {
+      console.error(`[Google Calendar] DIAGNOSIS: Calendar not found (404)`);
+      console.error(`[Google Calendar]   - Calendar ID: ${calendarId}`);
       throw new Error(
         `Calendar not found (404): Calendar "${calendarId}" does not exist or is not accessible. ` +
         `Verify the calendar ID is correct.`
       );
     }
     
+    console.error('[Google Calendar] ===== ERROR HANDLING COMPLETE =====');
     throw new Error(`Failed to list Google Calendar events: ${errorMessage}`);
   }
 }
