@@ -10,6 +10,16 @@ import {
 } from 'firebase-admin/firestore';
 
 /**
+ * Remove undefined values from an object so Firestore doesn't reject the payload.
+ * Keeps null so callers can explicitly clear fields.
+ */
+function stripUndefined<T extends Record<string, unknown>>(data: T): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Record<string, unknown>;
+}
+
+/**
  * Collections that should be stored in the admin Firebase project
  * All other collections (like bugs) are stored in project-specific Firebase projects
  */
@@ -129,11 +139,11 @@ export async function createDocument<T = DocumentData>(
   const collection = await getCollection(projectId, collectionName);
   const now = new Date();
   
-  const docData = {
+  const docData = stripUndefined({
     ...data,
     createdAt: now,
     updatedAt: now,
-  };
+  } as Record<string, unknown>);
   
   const docRef = await collection.add(docData);
   return docRef.id;
@@ -150,10 +160,12 @@ export async function updateDocument<T = DocumentData>(
 ): Promise<void> {
   const docRef = await getDocument(projectId, collectionName, documentId);
   
-  await docRef.update({
-    ...data,
-    updatedAt: new Date(),
-  });
+  await docRef.update(
+    stripUndefined({
+      ...data,
+      updatedAt: new Date(),
+    } as Record<string, unknown>)
+  );
 }
 
 /**

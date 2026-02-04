@@ -539,20 +539,20 @@ export async function unsyncCalendarItemFromGoogleCalendar(
 
     // Clear Google Calendar info from calendar item
     await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
-      googleCalendarEventId: undefined,
-      googleMeetLink: undefined,
+      googleCalendarEventId: null,
+      googleMeetLink: null,
       googleCalendarSynced: false,
-      googleCalendarHtmlLink: undefined,
+      googleCalendarHtmlLink: null,
     });
   } catch (error) {
     console.error('[Google Calendar] Failed to unsync calendar item:', error);
     // Don't throw - allow unsync even if event was already deleted externally
     // Still clear the local fields
     await updateDocument<CalendarItem>(projectId, 'calendar', itemId, {
-      googleCalendarEventId: undefined,
-      googleMeetLink: undefined,
+      googleCalendarEventId: null,
+      googleMeetLink: null,
       googleCalendarSynced: false,
-      googleCalendarHtmlLink: undefined,
+      googleCalendarHtmlLink: null,
     });
   }
 }
