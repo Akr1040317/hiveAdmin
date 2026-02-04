@@ -31,10 +31,10 @@ export interface CalendarItem {
   attendees?: string[]; // Array of email addresses
   reminderDays?: number[]; // Days before event to send reminders
   reminderSent?: Date; // Timestamp when reminder was last sent
-  googleCalendarEventId?: string; // Google Calendar event ID
-  googleMeetLink?: string; // Google Meet link (only for events that need Meet)
+  googleCalendarEventId?: string | null; // Google Calendar event ID (null when unsynced)
+  googleMeetLink?: string | null; // Google Meet link (null when unsynced)
   googleCalendarSynced?: boolean; // Whether synced to Google Calendar
-  googleCalendarHtmlLink?: string; // Link to open event in Google Calendar
+  googleCalendarHtmlLink?: string | null; // Link to open event in Google Calendar (null when unsynced)
   createdAt: Date;
   updatedAt: Date;
 }
