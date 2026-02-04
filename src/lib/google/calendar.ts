@@ -83,11 +83,21 @@ async function initializeCalendarClient() {
     email: credentials.client_email,
     key: privateKey,
     scopes: ['https://www.googleapis.com/auth/calendar'],
+    subject: undefined, // Don't use domain-wide delegation unless needed
   });
+  
+  console.log(`[Google Calendar] Initializing service account: ${credentials.client_email}`);
+  console.log(`[Google Calendar] Project ID: ${credentials.project_id}`);
 
   // Authorize the client
   try {
-    await jwtClient.authorize();
+    const authResult = await jwtClient.authorize();
+    console.log('[Google Calendar] Service account authorized successfully');
+    
+    // Verify credentials are set
+    if (!jwtClient.credentials || !jwtClient.credentials.access_token) {
+      throw new Error('Authorization succeeded but no access token received');
+    }
   } catch (error: any) {
     console.error('Failed to authorize Google Calendar JWT client:', error);
     const errorMessage = error?.message || String(error);
@@ -102,15 +112,23 @@ async function initializeCalendarClient() {
     } else if (errorMessage.includes('API') || errorMessage.includes('not enabled')) {
       throw new Error(
         `Google Calendar API not enabled or accessible: ${errorMessage}. ` +
-        `Enable the Google Calendar API in Google Cloud Console.`
+        `Enable the Google Calendar API in Google Cloud Console for project ${credentials.project_id || 'unknown'}.`
       );
     } else {
       throw new Error(`Failed to authorize Google Calendar service account: ${errorMessage}`);
     }
   }
 
-  // Initialize Calendar API
-  calendarClient = google.calendar({ version: 'v3', auth: jwtClient as any });
+  // Initialize Calendar API with authenticated JWT client
+  calendarClient = google.calendar({ 
+    version: 'v3', 
+    auth: jwtClient as any 
+  });
+
+  // Verify the client is properly initialized
+  if (!calendarClient) {
+    throw new Error('Failed to initialize Google Calendar client');
+  }
 
   return calendarClient;
 }
@@ -451,7 +469,28 @@ export async function listGoogleCalendarEvents(
     }));
   } catch (error: any) {
     console.error('Error listing Google Calendar events:', error);
-    throw new Error(`Failed to list Google Calendar events: ${error.message}`);
+    const errorMessage = error?.message || String(error);
+    
+    // Provide specific guidance for common errors
+    if (errorMessage.includes('unregistered callers') || errorMessage.includes('API Key')) {
+      throw new Error(
+        `Failed to list Google Calendar events: ${errorMessage}. ` +
+        `Ensure the Google Calendar API is enabled in Google Cloud Console for the service account's project. ` +
+        `Go to: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com`
+      );
+    } else if (error.code === 403) {
+      throw new Error(
+        `Access denied (403): ${errorMessage}. ` +
+        `Check that the calendar "${calendarId}" is shared with the service account email.`
+      );
+    } else if (error.code === 404) {
+      throw new Error(
+        `Calendar not found (404): Calendar "${calendarId}" does not exist or is not accessible. ` +
+        `Verify the calendar ID is correct.`
+      );
+    }
+    
+    throw new Error(`Failed to list Google Calendar events: ${errorMessage}`);
   }
 }
 
