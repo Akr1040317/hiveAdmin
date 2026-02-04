@@ -585,45 +585,67 @@ export async function importEventsFromGoogleCalendar(
   let googleEvents: any[] = [];
   const logs: string[] = [];
   
-  // Helper to collect logs for client-side display
-  const addLog = (message: string) => {
-    logs.push(message);
-    console.log(message); // Also log server-side
-  };
-  
   // Intercept console.log calls from calendar module to capture all logs
   const originalConsoleLog = console.log;
   const originalConsoleError = console.error;
   const originalConsoleWarn = console.warn;
   
-  console.log = (...args: any[]) => {
-    const message = args.map(arg => 
-      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-    ).join(' ');
-    if (message.includes('[Google Calendar]')) {
-      addLog(message);
+  // Flag to prevent recursion when we call original console methods
+  let isIntercepting = false;
+  
+  // Helper to collect logs for client-side display
+  // This uses original console methods to avoid recursion
+  const addLog = (message: string) => {
+    logs.push(message);
+    // Use original console.log to avoid recursion
+    if (!isIntercepting) {
+      originalConsoleLog(message);
     }
-    originalConsoleLog.apply(console, args);
+  };
+  
+  console.log = (...args: any[]) => {
+    isIntercepting = true;
+    try {
+      const message = args.map(arg => 
+        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+      ).join(' ');
+      if (message.includes('[Google Calendar]')) {
+        logs.push(message);
+      }
+      originalConsoleLog.apply(console, args);
+    } finally {
+      isIntercepting = false;
+    }
   };
   
   console.error = (...args: any[]) => {
-    const message = args.map(arg => 
-      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-    ).join(' ');
-    if (message.includes('[Google Calendar]')) {
-      addLog(`[Google Calendar] ERROR: ${message}`);
+    isIntercepting = true;
+    try {
+      const message = args.map(arg => 
+        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+      ).join(' ');
+      if (message.includes('[Google Calendar]')) {
+        logs.push(`[Google Calendar] ERROR: ${message}`);
+      }
+      originalConsoleError.apply(console, args);
+    } finally {
+      isIntercepting = false;
     }
-    originalConsoleError.apply(console, args);
   };
   
   console.warn = (...args: any[]) => {
-    const message = args.map(arg => 
-      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-    ).join(' ');
-    if (message.includes('[Google Calendar]')) {
-      addLog(`[Google Calendar] WARNING: ${message}`);
+    isIntercepting = true;
+    try {
+      const message = args.map(arg => 
+        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+      ).join(' ');
+      if (message.includes('[Google Calendar]')) {
+        logs.push(`[Google Calendar] WARNING: ${message}`);
+      }
+      originalConsoleWarn.apply(console, args);
+    } finally {
+      isIntercepting = false;
     }
-    originalConsoleWarn.apply(console, args);
   };
   
   try {
