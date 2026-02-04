@@ -584,6 +584,16 @@ export async function importEventsFromGoogleCalendar(
   
   let googleEvents: any[] = [];
   try {
+    // List available calendars for debugging
+    const { listCalendars } = await import('@/lib/google/calendar');
+    try {
+      const availableCalendars = await listCalendars();
+      console.log(`[Google Calendar] Service account has access to ${availableCalendars.length} calendar(s)`);
+    } catch (err) {
+      // Ignore errors listing calendars, just continue
+      console.warn('[Google Calendar] Could not list calendars:', err);
+    }
+    
     googleEvents = await listGoogleCalendarEvents(timeMin, timeMax);
   } catch (error: any) {
     // Handle Google Calendar API errors gracefully

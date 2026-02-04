@@ -384,6 +384,28 @@ export async function getCalendarEvent(eventId: string): Promise<{
 }
 
 /**
+ * List calendars accessible by the service account
+ * Useful for debugging to see which calendars are available
+ */
+export async function listCalendars(): Promise<Array<{ id: string; summary: string; primary?: boolean }>> {
+  const client = await initializeCalendarClient();
+  
+  try {
+    const response = await client.calendarList.list();
+    const calendars = (response.data.items || []).map((cal: any) => ({
+      id: cal.id,
+      summary: cal.summary || 'Untitled Calendar',
+      primary: cal.primary || false,
+    }));
+    console.log('[Google Calendar] Available calendars:', calendars);
+    return calendars;
+  } catch (error: any) {
+    console.error('[Google Calendar] Failed to list calendars:', error);
+    throw error;
+  }
+}
+
+/**
  * List Google Calendar events
  */
 export async function listGoogleCalendarEvents(
@@ -394,6 +416,9 @@ export async function listGoogleCalendarEvents(
   const client = await initializeCalendarClient();
   const calendarId = getCalendarId();
 
+  // Log which calendar we're accessing for debugging
+  console.log(`[Google Calendar] Accessing calendar: "${calendarId}"`);
+
   try {
     const response = await client.events.list({
       calendarId,
@@ -403,6 +428,13 @@ export async function listGoogleCalendarEvents(
       singleEvents: true,
       orderBy: 'startTime',
     });
+    
+    const eventCount = response.data.items?.length || 0;
+    console.log(`[Google Calendar] Found ${eventCount} events in calendar "${calendarId}"`);
+    
+    if (eventCount === 0) {
+      console.warn(`[Google Calendar] No events found. Make sure calendar "${calendarId}" is correct and shared with the service account.`);
+    }
 
     const events = response.data.items || [];
     
