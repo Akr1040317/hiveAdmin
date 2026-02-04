@@ -10,6 +10,7 @@ import {
   queryCollection,
 } from '@/lib/firebase/data-access';
 import { ProjectId, getProject } from '@/lib/projects';
+import { serializeForClient } from '@/lib/utils/serialize';
 import { generateCalendarItemICS } from '@/lib/calendar-invite';
 import { format } from 'date-fns';
 import {
@@ -41,12 +42,14 @@ export interface CalendarItem {
 
 export async function getCalendarItems(projectId: ProjectId, token?: string | null): Promise<CalendarItem[]> {
   await requireAuth(token);
-  return getCollectionData<CalendarItem>(projectId, 'calendar');
+  const data = await getCollectionData<CalendarItem>(projectId, 'calendar');
+  return serializeForClient(data) as CalendarItem[];
 }
 
 export async function getCalendarItem(projectId: ProjectId, itemId: string, token?: string | null): Promise<CalendarItem | null> {
   await requireAuth(token);
-  return getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  const data = await getDocumentData<CalendarItem>(projectId, 'calendar', itemId);
+  return data ? (serializeForClient(data) as CalendarItem) : null;
 }
 
 export async function createCalendarItem(
@@ -123,12 +126,13 @@ export async function getCalendarItemsByDateRange(
   token?: string | null
 ): Promise<CalendarItem[]> {
   await requireAuth(token);
-  return queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
+  const data = await queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
     query
       .where('date', '>=', startDate)
       .where('date', '<=', endDate)
       .orderBy('date', 'asc')
   );
+  return serializeForClient(data) as CalendarItem[];
 }
 
 export async function getCalendarItemsByType(
@@ -137,9 +141,10 @@ export async function getCalendarItemsByType(
   token?: string | null
 ): Promise<CalendarItem[]> {
   await requireAuth(token);
-  return queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
+  const data = await queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
     query.where('type', '==', type)
   );
+  return serializeForClient(data) as CalendarItem[];
 }
 
 export async function getCalendarItemsByStatus(
@@ -148,9 +153,10 @@ export async function getCalendarItemsByStatus(
   token?: string | null
 ): Promise<CalendarItem[]> {
   await requireAuth(token);
-  return queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
+  const data = await queryCollection<CalendarItem>(projectId, 'calendar', (query) =>
     query.where('status', '==', status)
   );
+  return serializeForClient(data) as CalendarItem[];
 }
 
 /**
@@ -603,12 +609,19 @@ export async function importEventsFromGoogleCalendar(
     }
   };
   
-  console.log = (...args: any[]) => {
+  const safeStringify = (arg: unknown): string => {
+    if (typeof arg === 'string') return arg;
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
+  };
+
+  console.log = (...args: unknown[]) => {
     isIntercepting = true;
     try {
-      const message = args.map(arg => 
-        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-      ).join(' ');
+      const message = args.map(safeStringify).join(' ');
       if (message.includes('[Google Calendar]')) {
         logs.push(message);
       }
@@ -617,13 +630,11 @@ export async function importEventsFromGoogleCalendar(
       isIntercepting = false;
     }
   };
-  
-  console.error = (...args: any[]) => {
+
+  console.error = (...args: unknown[]) => {
     isIntercepting = true;
     try {
-      const message = args.map(arg => 
-        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-      ).join(' ');
+      const message = args.map(safeStringify).join(' ');
       if (message.includes('[Google Calendar]')) {
         logs.push(`[Google Calendar] ERROR: ${message}`);
       }
@@ -632,13 +643,11 @@ export async function importEventsFromGoogleCalendar(
       isIntercepting = false;
     }
   };
-  
-  console.warn = (...args: any[]) => {
+
+  console.warn = (...args: unknown[]) => {
     isIntercepting = true;
     try {
-      const message = args.map(arg => 
-        typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
-      ).join(' ');
+      const message = args.map(safeStringify).join(' ');
       if (message.includes('[Google Calendar]')) {
         logs.push(`[Google Calendar] WARNING: ${message}`);
       }
@@ -700,12 +709,12 @@ export async function importEventsFromGoogleCalendar(
     console.error = originalConsoleError;
     console.warn = originalConsoleWarn;
     
-    // Return logs along with empty result so client can display them
-    return { 
-      imported: 0, 
-      updated: 0, 
+    // Return plain serializable object for client (no class instances)
+    return {
+      imported: 0,
+      updated: 0,
       skipped: 0,
-      logs: logs // Include logs in response
+      logs: logs.map((s) => (typeof s === 'string' ? s : String(s))),
     };
   } finally {
     // Always restore console methods
@@ -795,10 +804,11 @@ export async function importEventsFromGoogleCalendar(
   console.error = originalConsoleError;
   console.warn = originalConsoleWarn;
   
-  return { 
-    imported, 
-    updated, 
-    skipped,
-    logs: logs // Include logs in response
+  // Return plain serializable object for client (no class instances)
+  return {
+    imported: Number(imported),
+    updated: Number(updated),
+    skipped: Number(skipped),
+    logs: logs.map((s) => (typeof s === 'string' ? s : String(s))),
   };
 }
