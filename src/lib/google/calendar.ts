@@ -223,6 +223,14 @@ async function initializeCalendarClient() {
   }
 
   // Initialize Calendar API with authenticated JWT client
+  // On serverless (e.g. Vercel), Google often requires an API key for "API consumer identity"
+  // in addition to the service account token — otherwise you get 403 "unregistered callers"
+  const apiKey = process.env.GOOGLE_API_KEY?.trim();
+  if (apiKey) {
+    console.log('[Google Calendar] Using GOOGLE_API_KEY for project identity (serverless fix)');
+  } else {
+    console.log('[Google Calendar] No GOOGLE_API_KEY set — if you get 403 "unregistered callers", add an API key from the same GCP project');
+  }
   console.log('[Google Calendar] ===== INITIALIZING CALENDAR API CLIENT =====');
   console.log(`[Google Calendar] API Version: v3`);
   console.log(`[Google Calendar] Using authenticated JWT client`);
@@ -230,6 +238,7 @@ async function initializeCalendarClient() {
   calendarClient = google.calendar({ 
     version: 'v3', 
     auth: jwtClient as any,
+    ...(apiKey && { key: apiKey }),
   });
   
   console.log(`[Google Calendar] Calendar API client created successfully`);
@@ -674,25 +683,25 @@ export async function listGoogleCalendarEvents(
     const serviceAccountEmail = jwtClient?.email || 'unknown';
     
     if (errorMessage.includes('unregistered callers') || errorMessage.includes('API Key')) {
-      console.error(`[Google Calendar] DIAGNOSIS: Unregistered callers error`);
+      console.error(`[Google Calendar] DIAGNOSIS: Unregistered callers error (common on Vercel/serverless)`);
       console.error(`[Google Calendar]   - Project ID: ${projectId}`);
       console.error(`[Google Calendar]   - Service Account: ${serviceAccountEmail}`);
+      console.error(`[Google Calendar]   - GOOGLE_API_KEY set: ${process.env.GOOGLE_API_KEY ? 'YES' : 'NO'}`);
       console.error(`[Google Calendar]   - Access Token Present: ${jwtClient?.credentials?.access_token ? 'YES' : 'NO'}`);
       console.error(`[Google Calendar]   - Calendar ID: ${calendarId}`);
-      console.error(`[Google Calendar]   - Enable API: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`);
-      console.error(`[Google Calendar] SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}"`);
-      console.error(`[Google Calendar]   Steps:`);
-      console.error(`[Google Calendar]   1. Open Google Calendar`);
-      console.error(`[Google Calendar]   2. Find the calendar "${calendarId}"`);
-      console.error(`[Google Calendar]   3. Click the three dots next to the calendar name`);
-      console.error(`[Google Calendar]   4. Select "Settings and sharing"`);
-      console.error(`[Google Calendar]   5. Under "Share with specific people", click "Add people"`);
-      console.error(`[Google Calendar]   6. Add "${serviceAccountEmail}" with "Make changes to events" permission`);
+      console.error(`[Google Calendar] FIX: Add an API key from the SAME GCP project (prepcenter-750c1):`);
+      console.error(`[Google Calendar]   1. Go to https://console.cloud.google.com/apis/credentials?project=${projectId}`);
+      console.error(`[Google Calendar]   2. Create credentials → API key`);
+      console.error(`[Google Calendar]   3. (Optional) Restrict the key to "Calendar API" only`);
+      console.error(`[Google Calendar]   4. Set env var GOOGLE_API_KEY to the key value (e.g. in Vercel env)`);
+      console.error(`[Google Calendar] Also ensure the calendar "${calendarId}" is shared with "${serviceAccountEmail}"`);
       throw new Error(
         `Failed to list Google Calendar events: ${errorMessage}. ` +
-        `SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}". ` +
-        `Go to Google Calendar → Settings → Share with specific people → Add "${serviceAccountEmail}" with "Make changes to events" permission. ` +
-        `Also ensure the Google Calendar API is enabled: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`
+        `On serverless (Vercel), Google requires an API key for project identity. ` +
+        `Create an API key in the same GCP project (${projectId}): ` +
+        `APIs & Services → Credentials → Create credentials → API key. ` +
+        `Then set GOOGLE_API_KEY in your environment (e.g. Vercel env vars). ` +
+        `Also ensure the calendar is shared with ${serviceAccountEmail}.`
       );
     } else if (error.code === 403) {
       console.error(`[Google Calendar] DIAGNOSIS: Access denied (403)`);
