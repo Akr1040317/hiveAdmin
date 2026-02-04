@@ -137,10 +137,10 @@ async function initializeCalendarClient() {
   calendarClient = google.calendar({ 
     version: 'v3', 
     auth: jwtClient as any,
-    // Note: project_id is set in JWT client, but we can also pass it here if needed
   });
   
   console.log(`[Google Calendar] Calendar API client initialized for project: ${credentials.project_id}`);
+  console.log(`[Google Calendar] Service account email: ${credentials.client_email}`);
 
   // Verify the client is properly initialized
   if (!calendarClient) {
@@ -455,6 +455,11 @@ export async function listGoogleCalendarEvents(
   console.log(`[Google Calendar] Accessing calendar: "${calendarId}"`);
 
   try {
+    // Log authentication state before making API call
+    if (jwtClient && jwtClient.credentials) {
+      console.log(`[Google Calendar] Making API call with access token: ${jwtClient.credentials.access_token ? 'Present' : 'Missing'}`);
+    }
+    
     const response = await client.events.list({
       calendarId,
       timeMin: timeMin?.toISOString(),
