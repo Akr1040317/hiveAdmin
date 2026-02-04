@@ -591,6 +591,41 @@ export async function importEventsFromGoogleCalendar(
     console.log(message); // Also log server-side
   };
   
+  // Intercept console.log calls from calendar module to capture all logs
+  const originalConsoleLog = console.log;
+  const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  
+  console.log = (...args: any[]) => {
+    const message = args.map(arg => 
+      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+    ).join(' ');
+    if (message.includes('[Google Calendar]')) {
+      addLog(message);
+    }
+    originalConsoleLog.apply(console, args);
+  };
+  
+  console.error = (...args: any[]) => {
+    const message = args.map(arg => 
+      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+    ).join(' ');
+    if (message.includes('[Google Calendar]')) {
+      addLog(`[Google Calendar] ERROR: ${message}`);
+    }
+    originalConsoleError.apply(console, args);
+  };
+  
+  console.warn = (...args: any[]) => {
+    const message = args.map(arg => 
+      typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)
+    ).join(' ');
+    if (message.includes('[Google Calendar]')) {
+      addLog(`[Google Calendar] WARNING: ${message}`);
+    }
+    originalConsoleWarn.apply(console, args);
+  };
+  
   try {
     addLog('[Google Calendar] Starting import process...');
     addLog(`[Google Calendar] Project: ${projectId}`);
@@ -637,6 +672,11 @@ export async function importEventsFromGoogleCalendar(
       addLog(`[Google Calendar] DIAGNOSIS: Unknown error type`);
     }
     
+    // Restore original console methods
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+    
     // Return logs along with empty result so client can display them
     return { 
       imported: 0, 
@@ -644,6 +684,11 @@ export async function importEventsFromGoogleCalendar(
       skipped: 0,
       logs: logs // Include logs in response
     };
+  } finally {
+    // Always restore console methods
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
   }
   
   // Add success logs
@@ -721,6 +766,11 @@ export async function importEventsFromGoogleCalendar(
   }
   
   addLog(`[Google Calendar] Import complete: ${imported} imported, ${updated} updated, ${skipped} skipped`);
+  
+  // Restore original console methods
+  console.log = originalConsoleLog;
+  console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
   
   return { 
     imported, 
