@@ -95,14 +95,38 @@ function CalendarItemsContent() {
         const isPrepCenterProject = projectId === 'prepcenter-uae' || projectId === 'prepcenter-oman';
         if (isPrepCenterProject) {
           try {
+            console.log('%c[Google Calendar] ===== STARTING IMPORT =====', 'color: blue; font-weight: bold; font-size: 14px;');
             const result = await handleImportFromGoogle(projectId);
-            console.log(`[Google Calendar] Imported: ${result.imported}, Updated: ${result.updated}, Skipped: ${result.skipped}`);
+            
+            // Log all server-side logs to browser console
+            if (result.logs && result.logs.length > 0) {
+              console.group('%c[Google Calendar] Server Logs', 'color: green; font-weight: bold;');
+              result.logs.forEach((log: string) => {
+                if (log.includes('ERROR') || log.includes('FAILED')) {
+                  console.error(`%c${log}`, 'color: red;');
+                } else if (log.includes('WARNING') || log.includes('WARN')) {
+                  console.warn(`%c${log}`, 'color: orange;');
+                } else if (log.includes('DIAGNOSIS')) {
+                  console.info(`%c${log}`, 'color: purple; font-weight: bold;');
+                } else {
+                  console.log(log);
+                }
+              });
+              console.groupEnd();
+            }
+            
+            console.log(`%c[Google Calendar] Result: Imported: ${result.imported}, Updated: ${result.updated}, Skipped: ${result.skipped}`, 
+              result.imported > 0 || result.updated > 0 ? 'color: green; font-weight: bold;' : 'color: gray;');
+            console.log('%c[Google Calendar] ===== IMPORT COMPLETE =====', 'color: blue; font-weight: bold; font-size: 14px;');
             
             // Reload calendar items after import
             const updatedItems = await loadCalendarItems(projectId);
             if (updatedItems) setCalendarItems(updatedItems);
-          } catch (error) {
-            console.error('[Google Calendar] Failed to import events:', error);
+          } catch (error: any) {
+            console.error('%c[Google Calendar] ===== IMPORT FAILED =====', 'color: red; font-weight: bold; font-size: 14px;');
+            console.error('[Google Calendar] Error:', error);
+            console.error('[Google Calendar] Error message:', error?.message);
+            console.error('[Google Calendar] Error stack:', error?.stack);
             // Continue even if import fails
           }
         }

@@ -564,7 +564,7 @@ export async function unsyncCalendarItemFromGoogleCalendar(
 export async function importEventsFromGoogleCalendar(
   projectId: ProjectId,
   token?: string | null
-): Promise<{ imported: number; updated: number; skipped: number }> {
+): Promise<{ imported: number; updated: number; skipped: number; logs?: string[] }> {
   await requireAuth(token);
   
   // Only import for prepcenter projects (prepcenter-uae, prepcenter-oman)
@@ -583,44 +583,81 @@ export async function importEventsFromGoogleCalendar(
   timeMax.setFullYear(timeMax.getFullYear() + 1);
   
   let googleEvents: any[] = [];
+  const logs: string[] = [];
+  
+  // Helper to collect logs for client-side display
+  const addLog = (message: string) => {
+    logs.push(message);
+    console.log(message); // Also log server-side
+  };
+  
   try {
+    addLog('[Google Calendar] Starting import process...');
+    addLog(`[Google Calendar] Project: ${projectId}`);
+    addLog(`[Google Calendar] Time range: ${timeMin.toISOString()} to ${timeMax.toISOString()}`);
+    
     // List available calendars for debugging
     const { listCalendars } = await import('@/lib/google/calendar');
     try {
+      addLog('[Google Calendar] Listing available calendars...');
       const availableCalendars = await listCalendars();
-      console.log(`[Google Calendar] Service account has access to ${availableCalendars.length} calendar(s)`);
-    } catch (err) {
-      // Ignore errors listing calendars, just continue
-      console.warn('[Google Calendar] Could not list calendars:', err);
+      addLog(`[Google Calendar] Service account has access to ${availableCalendars.length} calendar(s)`);
+      availableCalendars.forEach((cal, idx) => {
+        addLog(`[Google Calendar]   ${idx + 1}. ${cal.summary} (${cal.id}) ${cal.primary ? '[PRIMARY]' : ''}`);
+      });
+    } catch (err: any) {
+      addLog(`[Google Calendar] WARNING: Could not list calendars: ${err?.message || String(err)}`);
     }
     
+    addLog('[Google Calendar] Fetching events from Google Calendar...');
     googleEvents = await listGoogleCalendarEvents(timeMin, timeMax);
+    addLog(`[Google Calendar] Successfully fetched ${googleEvents.length} events`);
   } catch (error: any) {
     // Handle Google Calendar API errors gracefully
     const errorMessage = error?.message || String(error);
-    console.error('[Google Calendar] Failed to import events:', errorMessage);
+    addLog(`[Google Calendar] ERROR: Failed to import events: ${errorMessage}`);
+    addLog(`[Google Calendar] Error code: ${error?.code || 'unknown'}`);
+    addLog(`[Google Calendar] Error status: ${error?.response?.status || 'unknown'}`);
+    
+    if (error?.response?.data) {
+      addLog(`[Google Calendar] Error response: ${JSON.stringify(error.response.data)}`);
+    }
     
     // Check for specific error types
     if (errorMessage.includes('service account not configured') || 
         errorMessage.includes('GOOGLE_SERVICE_ACCOUNT')) {
-      console.warn('[Google Calendar] Service account not configured. Google Calendar import is disabled.');
+      addLog('[Google Calendar] DIAGNOSIS: Service account not configured');
     } else if (errorMessage.includes('authorize') || errorMessage.includes('authentication')) {
-      console.warn('[Google Calendar] Authentication failed. Check service account credentials and calendar sharing.');
+      addLog('[Google Calendar] DIAGNOSIS: Authentication failed');
     } else if (errorMessage.includes('API') || errorMessage.includes('not enabled')) {
-      console.warn('[Google Calendar] Google Calendar API may not be enabled. Check Google Cloud Console.');
+      addLog('[Google Calendar] DIAGNOSIS: API may not be enabled');
+    } else if (errorMessage.includes('unregistered callers')) {
+      addLog('[Google Calendar] DIAGNOSIS: Unregistered callers error - API may not recognize service account');
     } else {
-      console.warn('[Google Calendar] Unknown error during import:', errorMessage);
+      addLog(`[Google Calendar] DIAGNOSIS: Unknown error type`);
     }
     
-    // Return empty result instead of crashing
-    return { imported: 0, updated: 0, skipped: 0 };
+    // Return logs along with empty result so client can display them
+    return { 
+      imported: 0, 
+      updated: 0, 
+      skipped: 0,
+      logs: logs // Include logs in response
+    };
   }
+  
+  // Add success logs
+  addLog(`[Google Calendar] Processing ${googleEvents.length} events...`);
   
   let imported = 0;
   let updated = 0;
   let skipped = 0;
   
-  for (const googleEvent of googleEvents) {
+  for (let i = 0; i < googleEvents.length; i++) {
+    const googleEvent = googleEvents[i];
+    if (i < 5) { // Log first 5 events for debugging
+      addLog(`[Google Calendar] Event ${i + 1}: ${googleEvent.summary} (${googleEvent.id})`);
+    }
     // Check if event already exists in Firestore (by googleCalendarEventId)
     const existingItems = await queryCollection<CalendarItem>(
       projectId,
@@ -683,5 +720,12 @@ export async function importEventsFromGoogleCalendar(
     }
   }
   
-  return { imported, updated, skipped };
+  addLog(`[Google Calendar] Import complete: ${imported} imported, ${updated} updated, ${skipped} skipped`);
+  
+  return { 
+    imported, 
+    updated, 
+    skipped,
+    logs: logs // Include logs in response
+  };
 }
