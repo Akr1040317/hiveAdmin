@@ -224,7 +224,8 @@ async function initializeCalendarClient() {
 
   // Initialize Calendar API with authenticated JWT client
   // On serverless (e.g. Vercel), Google often requires an API key for "API consumer identity"
-  // in addition to the service account token — otherwise you get 403 "unregistered callers"
+  // in addition to the service account token — otherwise you get 403 "unregistered callers".
+  // The service account (GOOGLE_SERVICE_ACCOUNT_JSON) must be from the same GCP project as the API key (e.g. prepcenter-750c1).
   const apiKey = process.env.GOOGLE_API_KEY?.trim();
   if (apiKey) {
     console.log('[Google Calendar] Using GOOGLE_API_KEY for project identity (serverless fix)');

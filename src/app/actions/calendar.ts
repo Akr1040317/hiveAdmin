@@ -664,6 +664,7 @@ export async function importEventsFromGoogleCalendar(
       });
     } catch (err: any) {
       addLog(`[Google Calendar] WARNING: Could not list calendars: ${err?.message || String(err)}`);
+      addLog('[Google Calendar] Skipping calendar list (service account has no user context for calendarList.list).');
     }
     
     addLog('[Google Calendar] Fetching events from Google Calendar...');
