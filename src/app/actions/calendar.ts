@@ -582,7 +582,29 @@ export async function importEventsFromGoogleCalendar(
   const timeMax = new Date();
   timeMax.setFullYear(timeMax.getFullYear() + 1);
   
-  const googleEvents = await listGoogleCalendarEvents(timeMin, timeMax);
+  let googleEvents: any[] = [];
+  try {
+    googleEvents = await listGoogleCalendarEvents(timeMin, timeMax);
+  } catch (error: any) {
+    // Handle Google Calendar API errors gracefully
+    const errorMessage = error?.message || String(error);
+    console.error('[Google Calendar] Failed to import events:', errorMessage);
+    
+    // Check for specific error types
+    if (errorMessage.includes('service account not configured') || 
+        errorMessage.includes('GOOGLE_SERVICE_ACCOUNT')) {
+      console.warn('[Google Calendar] Service account not configured. Google Calendar import is disabled.');
+    } else if (errorMessage.includes('authorize') || errorMessage.includes('authentication')) {
+      console.warn('[Google Calendar] Authentication failed. Check service account credentials and calendar sharing.');
+    } else if (errorMessage.includes('API') || errorMessage.includes('not enabled')) {
+      console.warn('[Google Calendar] Google Calendar API may not be enabled. Check Google Cloud Console.');
+    } else {
+      console.warn('[Google Calendar] Unknown error during import:', errorMessage);
+    }
+    
+    // Return empty result instead of crashing
+    return { imported: 0, updated: 0, skipped: 0 };
+  }
   
   let imported = 0;
   let updated = 0;

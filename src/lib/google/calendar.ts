@@ -5,6 +5,15 @@ let calendarClient: any = null;
 let jwtClient: JWT | null = null;
 
 /**
+ * Get Google Calendar ID from environment variable, trimming whitespace
+ */
+function getCalendarId(): string {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  // Trim whitespace and newlines to handle Vercel env var formatting issues
+  return calendarId.trim();
+}
+
+/**
  * Initialize Google Calendar API client using service account
  */
 async function initializeCalendarClient() {
@@ -26,7 +35,7 @@ async function initializeCalendarClient() {
 
   if (!serviceAccountJson && !serviceAccountPath) {
     throw new Error(
-      'Google Calendar service account not configured. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_PATH'
+      'Google Calendar service account not configured. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_PATH environment variable.'
     );
   }
 
@@ -39,7 +48,7 @@ async function initializeCalendarClient() {
         ? JSON.parse(serviceAccountJson) 
         : serviceAccountJson;
     } catch (error) {
-      throw new Error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON');
+      throw new Error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON. Ensure it is valid JSON format.');
     }
   } else if (serviceAccountPath) {
     // Load from file (for local development)
@@ -81,7 +90,23 @@ async function initializeCalendarClient() {
     await jwtClient.authorize();
   } catch (error: any) {
     console.error('Failed to authorize Google Calendar JWT client:', error);
-    throw new Error(`Failed to authorize Google Calendar service account: ${error.message}`);
+    const errorMessage = error?.message || String(error);
+    
+    // Provide more helpful error messages
+    if (errorMessage.includes('invalid_grant') || errorMessage.includes('unauthorized')) {
+      throw new Error(
+        `Failed to authorize Google Calendar service account: ${errorMessage}. ` +
+        `Check that the service account email (${credentials.client_email}) has access to the calendar. ` +
+        `Share the calendar with this email address in Google Calendar settings.`
+      );
+    } else if (errorMessage.includes('API') || errorMessage.includes('not enabled')) {
+      throw new Error(
+        `Google Calendar API not enabled or accessible: ${errorMessage}. ` +
+        `Enable the Google Calendar API in Google Cloud Console.`
+      );
+    } else {
+      throw new Error(`Failed to authorize Google Calendar service account: ${errorMessage}`);
+    }
   }
 
   // Initialize Calendar API
@@ -154,7 +179,7 @@ export async function createCalendarEvent(
   options: CreateCalendarEventOptions
 ): Promise<{ eventId: string; meetLink?: string; htmlLink: string }> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   const event: GoogleCalendarEvent = {
     summary: options.summary,
@@ -220,7 +245,7 @@ export async function updateCalendarEvent(
   options: Partial<CreateCalendarEventOptions>
 ): Promise<{ meetLink?: string; htmlLink: string }> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   // First, get the existing event
   const existingEvent = await client.events.get({
@@ -298,7 +323,7 @@ export async function updateCalendarEvent(
  */
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   try {
     await client.events.delete({
@@ -330,7 +355,7 @@ export async function getCalendarEvent(eventId: string): Promise<{
   htmlLink?: string;
 }> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   try {
     const response = await client.events.get({
@@ -367,7 +392,7 @@ export async function listGoogleCalendarEvents(
   maxResults: number = 250
 ): Promise<GoogleCalendarEventData[]> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   try {
     const response = await client.events.list({
@@ -403,7 +428,7 @@ export async function listGoogleCalendarEvents(
  */
 export async function generateMeetLinkForEvent(eventId: string): Promise<string> {
   const client = await initializeCalendarClient();
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const calendarId = getCalendarId();
 
   // Get existing event
   const existingEvent = await client.events.get({

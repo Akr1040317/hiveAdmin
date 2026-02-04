@@ -58,7 +58,20 @@ export async function createMeeting(
   token?: string | null
 ): Promise<string> {
   await requireAuth(token);
-  return createDocument<Meeting>(projectId, 'meetings', data);
+  
+  // Create in Firestore first
+  const meetingId = await createDocument<Meeting>(projectId, 'meetings', data);
+  
+  // Auto-sync to Google Calendar with Meet link (non-blocking, graceful failure)
+  try {
+    await syncMeetingToGoogleCalendar(projectId, meetingId, true, token);
+  } catch (error) {
+    // Log error but don't fail the creation
+    console.error('[Google Calendar] Failed to auto-sync meeting:', error);
+    // Meeting is still created in Firestore, user can manually sync later
+  }
+  
+  return meetingId;
 }
 
 export async function updateMeeting(
@@ -68,12 +81,42 @@ export async function updateMeeting(
   token?: string | null
 ): Promise<void> {
   await requireAuth(token);
-  return updateDocument<Meeting>(projectId, 'meetings', meetingId, data);
+  
+  // Update in Firestore first
+  await updateDocument<Meeting>(projectId, 'meetings', meetingId, data);
+  
+  // Get updated meeting to check sync status
+  const updatedMeeting = await getDocumentData<Meeting>(projectId, 'meetings', meetingId);
+  
+  // Auto-sync update to Google Calendar if already synced
+  if (updatedMeeting?.googleCalendarSynced && updatedMeeting?.googleCalendarEventId) {
+    try {
+      await syncMeetingToGoogleCalendar(projectId, meetingId, false, token);
+    } catch (error) {
+      console.error('[Google Calendar] Failed to auto-sync meeting update:', error);
+      // Update still saved in Firestore
+    }
+  }
 }
 
 export async function deleteMeeting(projectId: ProjectId, meetingId: string, token?: string | null): Promise<void> {
   await requireAuth(token);
-  return deleteDocument(projectId, 'meetings', meetingId);
+  
+  // Get meeting to check sync status before deleting
+  const meeting = await getDocumentData<Meeting>(projectId, 'meetings', meetingId);
+  
+  // Delete from Google Calendar if synced
+  if (meeting?.googleCalendarSynced && meeting?.googleCalendarEventId) {
+    try {
+      await unsyncMeetingFromGoogleCalendar(projectId, meetingId, token);
+    } catch (error) {
+      console.error('[Google Calendar] Failed to delete meeting from Google Calendar:', error);
+      // Continue with Firestore deletion even if Google Calendar deletion fails
+    }
+  }
+  
+  // Delete from Firestore
+  await deleteDocument(projectId, 'meetings', meetingId);
 }
 
 export async function getUpcomingMeetings(projectId: ProjectId, token?: string | null): Promise<Meeting[]> {

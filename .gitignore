@@ -38,3 +38,4 @@ service-accounts/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env.vercel
