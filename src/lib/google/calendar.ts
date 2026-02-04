@@ -670,25 +670,46 @@ export async function listGoogleCalendarEvents(
     const errorMessage = error?.message || String(error);
     
     // Provide specific guidance for common errors
+    const projectId = currentServiceAccountProjectId || 'unknown';
+    const serviceAccountEmail = jwtClient?.email || 'unknown';
+    
     if (errorMessage.includes('unregistered callers') || errorMessage.includes('API Key')) {
-      const projectId = currentServiceAccountProjectId || 'unknown';
       console.error(`[Google Calendar] DIAGNOSIS: Unregistered callers error`);
       console.error(`[Google Calendar]   - Project ID: ${projectId}`);
-      console.error(`[Google Calendar]   - Service Account: ${jwtClient?.email || 'unknown'}`);
+      console.error(`[Google Calendar]   - Service Account: ${serviceAccountEmail}`);
       console.error(`[Google Calendar]   - Access Token Present: ${jwtClient?.credentials?.access_token ? 'YES' : 'NO'}`);
+      console.error(`[Google Calendar]   - Calendar ID: ${calendarId}`);
       console.error(`[Google Calendar]   - Enable API: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`);
+      console.error(`[Google Calendar] SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}"`);
+      console.error(`[Google Calendar]   Steps:`);
+      console.error(`[Google Calendar]   1. Open Google Calendar`);
+      console.error(`[Google Calendar]   2. Find the calendar "${calendarId}"`);
+      console.error(`[Google Calendar]   3. Click the three dots next to the calendar name`);
+      console.error(`[Google Calendar]   4. Select "Settings and sharing"`);
+      console.error(`[Google Calendar]   5. Under "Share with specific people", click "Add people"`);
+      console.error(`[Google Calendar]   6. Add "${serviceAccountEmail}" with "Make changes to events" permission`);
       throw new Error(
         `Failed to list Google Calendar events: ${errorMessage}. ` +
-        `Ensure the Google Calendar API is enabled in Google Cloud Console for project "${projectId}". ` +
-        `Enable API here: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`
+        `SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}". ` +
+        `Go to Google Calendar → Settings → Share with specific people → Add "${serviceAccountEmail}" with "Make changes to events" permission. ` +
+        `Also ensure the Google Calendar API is enabled: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`
       );
     } else if (error.code === 403) {
       console.error(`[Google Calendar] DIAGNOSIS: Access denied (403)`);
       console.error(`[Google Calendar]   - Calendar ID: ${calendarId}`);
-      console.error(`[Google Calendar]   - Service Account: ${jwtClient?.email || 'unknown'}`);
+      console.error(`[Google Calendar]   - Service Account: ${serviceAccountEmail}`);
+      console.error(`[Google Calendar] SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}"`);
+      console.error(`[Google Calendar]   Steps:`);
+      console.error(`[Google Calendar]   1. Open Google Calendar`);
+      console.error(`[Google Calendar]   2. Find the calendar "${calendarId}"`);
+      console.error(`[Google Calendar]   3. Click the three dots next to the calendar name`);
+      console.error(`[Google Calendar]   4. Select "Settings and sharing"`);
+      console.error(`[Google Calendar]   5. Under "Share with specific people", click "Add people"`);
+      console.error(`[Google Calendar]   6. Add "${serviceAccountEmail}" with "Make changes to events" permission`);
       throw new Error(
         `Access denied (403): ${errorMessage}. ` +
-        `Check that the calendar "${calendarId}" is shared with the service account email.`
+        `SOLUTION: Share the calendar "${calendarId}" with the service account email "${serviceAccountEmail}". ` +
+        `Go to Google Calendar → Settings → Share with specific people → Add "${serviceAccountEmail}" with "Make changes to events" permission.`
       );
     } else if (error.code === 404) {
       console.error(`[Google Calendar] DIAGNOSIS: Calendar not found (404)`);
