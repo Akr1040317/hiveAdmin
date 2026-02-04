@@ -3,6 +3,7 @@ import { JWT } from 'google-auth-library';
 
 let calendarClient: any = null;
 let jwtClient: JWT | null = null;
+let currentServiceAccountProjectId: string | null = null;
 
 /**
  * Get Google Calendar ID from environment variable, trimming whitespace
@@ -90,15 +91,25 @@ async function initializeCalendarClient() {
   console.log(`[Google Calendar] Initializing service account: ${credentials.client_email}`);
   console.log(`[Google Calendar] Project ID: ${credentials.project_id}`);
   console.log(`[Google Calendar] Scopes: https://www.googleapis.com/auth/calendar`);
+  
+  // Store project ID for error messages
+  currentServiceAccountProjectId = credentials.project_id;
 
   // Authorize the client
   try {
     const authResult = await jwtClient.authorize();
     console.log('[Google Calendar] Service account authorized successfully');
+    console.log(`[Google Calendar] Access token received: ${jwtClient.credentials?.access_token ? 'Yes' : 'No'}`);
     
     // Verify credentials are set
     if (!jwtClient.credentials || !jwtClient.credentials.access_token) {
       throw new Error('Authorization succeeded but no access token received');
+    }
+    
+    // Log token expiry for debugging
+    if (jwtClient.credentials.expiry_date) {
+      const expiryDate = new Date(jwtClient.credentials.expiry_date);
+      console.log(`[Google Calendar] Token expires at: ${expiryDate.toISOString()}`);
     }
   } catch (error: any) {
     console.error('Failed to authorize Google Calendar JWT client:', error);
@@ -479,11 +490,10 @@ export async function listGoogleCalendarEvents(
     
     // Provide specific guidance for common errors
     if (errorMessage.includes('unregistered callers') || errorMessage.includes('API Key')) {
-      const projectId = credentials.project_id || 'unknown';
+      const projectId = currentServiceAccountProjectId || 'unknown';
       throw new Error(
         `Failed to list Google Calendar events: ${errorMessage}. ` +
         `Ensure the Google Calendar API is enabled in Google Cloud Console for project "${projectId}". ` +
-        `Service account: ${credentials.client_email}. ` +
         `Enable API here: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=${projectId}`
       );
     } else if (error.code === 403) {
