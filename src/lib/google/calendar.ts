@@ -138,22 +138,43 @@ async function initializeCalendarClient() {
 
   // Authorize the client
   console.log('[Google Calendar] ===== AUTHORIZING SERVICE ACCOUNT =====');
+  console.log(`[Google Calendar] Service Account Email: ${credentials.client_email}`);
+  console.log(`[Google Calendar] Project ID: ${credentials.project_id}`);
+  console.log(`[Google Calendar] Scopes: https://www.googleapis.com/auth/calendar`);
+  console.log(`[Google Calendar] Private Key Present: ${!!privateKey}`);
+  console.log(`[Google Calendar] Private Key Starts Correctly: ${privateKey?.startsWith('-----BEGIN PRIVATE KEY-----')}`);
+  
   try {
     console.log('[Google Calendar] Calling jwtClient.authorize()...');
+    console.log('[Google Calendar] JWT Client Config:', {
+      email: jwtClient.email,
+      projectId: jwtClient.projectId,
+      scopes: jwtClient.scopes,
+      subject: jwtClient.subject,
+    });
+    
     const authResult = await jwtClient.authorize();
     console.log('[Google Calendar] Authorization successful!');
     console.log(`[Google Calendar] Auth result type: ${typeof authResult}`);
+    console.log(`[Google Calendar] Auth result:`, authResult);
     
     // Verify credentials are set
-    if (!jwtClient.credentials || !jwtClient.credentials.access_token) {
+    if (!jwtClient.credentials) {
+      console.error('[Google Calendar] ERROR: jwtClient.credentials is null/undefined');
+      throw new Error('Authorization succeeded but credentials object is missing');
+    }
+    
+    if (!jwtClient.credentials.access_token) {
       console.error('[Google Calendar] ERROR: Authorization succeeded but no access token received');
-      console.error(`[Google Calendar] Credentials object: ${JSON.stringify(jwtClient.credentials, null, 2)}`);
+      console.error(`[Google Calendar] Credentials keys: ${Object.keys(jwtClient.credentials).join(', ')}`);
+      console.error(`[Google Calendar] Credentials object:`, JSON.stringify(jwtClient.credentials, null, 2));
       throw new Error('Authorization succeeded but no access token received');
     }
     
-    console.log(`[Google Calendar] Access token received: YES`);
+    console.log(`[Google Calendar] ✓ Access token received: YES`);
     console.log(`[Google Calendar] Access token length: ${jwtClient.credentials.access_token.length} chars`);
-    console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 20)}...`);
+    console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 30)}...`);
+    console.log(`[Google Calendar] Access token ends with: ...${jwtClient.credentials.access_token.substring(jwtClient.credentials.access_token.length - 10)}`);
     
     // Log token expiry for debugging
     if (jwtClient.credentials.expiry_date) {
@@ -162,20 +183,25 @@ async function initializeCalendarClient() {
       const minutesUntilExpiry = Math.round((expiryDate.getTime() - now.getTime()) / 1000 / 60);
       console.log(`[Google Calendar] Token expires at: ${expiryDate.toISOString()}`);
       console.log(`[Google Calendar] Token expires in: ${minutesUntilExpiry} minutes`);
+      if (minutesUntilExpiry < 0) {
+        console.warn('[Google Calendar] WARNING: Token has already expired!');
+      }
     } else {
       console.log('[Google Calendar] Token expiry date not set');
     }
     
     console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
+    console.log(`[Google Calendar] Refresh token: ${jwtClient.credentials.refresh_token ? 'Present' : 'Not present'}`);
     console.log('[Google Calendar] ===== AUTHORIZATION COMPLETE =====');
   } catch (error: any) {
     console.error('[Google Calendar] ===== AUTHORIZATION FAILED =====');
-    console.error('[Google Calendar] Error details:', {
-      message: error?.message,
-      code: error?.code,
-      response: error?.response?.data,
-      stack: error?.stack,
-    });
+    console.error('[Google Calendar] Error type:', error?.constructor?.name);
+    console.error('[Google Calendar] Error message:', error?.message);
+    console.error('[Google Calendar] Error code:', error?.code);
+    console.error('[Google Calendar] Error response status:', error?.response?.status);
+    console.error('[Google Calendar] Error response data:', JSON.stringify(error?.response?.data || {}, null, 2));
+    console.error('[Google Calendar] Error response headers:', JSON.stringify(error?.response?.headers || {}, null, 2));
+    console.error('[Google Calendar] Full error:', error);
     console.error('Failed to authorize Google Calendar JWT client:', error);
     const errorMessage = error?.message || String(error);
     
@@ -529,20 +555,51 @@ export async function listGoogleCalendarEvents(
   console.log(`[Google Calendar] Target calendar ID: "${calendarId}"`);
 
   // Verify authentication before making API call
-  console.log('[Google Calendar] ===== VERIFYING AUTHENTICATION =====');
-  if (jwtClient && jwtClient.credentials) {
-    console.log(`[Google Calendar] JWT client exists: YES`);
-    console.log(`[Google Calendar] Credentials object exists: YES`);
-    console.log(`[Google Calendar] Access token present: ${jwtClient.credentials.access_token ? 'YES' : 'NO'}`);
-    if (jwtClient.credentials.access_token) {
-      console.log(`[Google Calendar] Access token length: ${jwtClient.credentials.access_token.length} chars`);
-      console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 30)}...`);
-    }
-    console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
-  } else {
-    console.error('[Google Calendar] ERROR: JWT client or credentials missing!');
-    throw new Error('JWT client not properly initialized');
+  console.log('[Google Calendar] ===== VERIFYING AUTHENTICATION BEFORE API CALL =====');
+  if (!jwtClient) {
+    console.error('[Google Calendar] ERROR: jwtClient is null/undefined!');
+    throw new Error('JWT client not initialized');
   }
+  
+  console.log(`[Google Calendar] JWT client exists: YES`);
+  console.log(`[Google Calendar] JWT client email: ${jwtClient.email}`);
+  console.log(`[Google Calendar] JWT client project ID: ${jwtClient.projectId}`);
+  
+  if (!jwtClient.credentials) {
+    console.error('[Google Calendar] ERROR: jwtClient.credentials is null/undefined!');
+    console.error('[Google Calendar] Attempting to re-authorize...');
+    try {
+      await jwtClient.authorize();
+      console.log('[Google Calendar] Re-authorization successful');
+    } catch (reauthError: any) {
+      console.error('[Google Calendar] Re-authorization failed:', reauthError?.message);
+      throw new Error('JWT client credentials missing and re-authorization failed');
+    }
+  }
+  
+  console.log(`[Google Calendar] Credentials object exists: YES`);
+  console.log(`[Google Calendar] Access token present: ${jwtClient.credentials?.access_token ? 'YES' : 'NO'}`);
+  
+  if (jwtClient.credentials?.access_token) {
+    console.log(`[Google Calendar] ✓ Access token length: ${jwtClient.credentials.access_token.length} chars`);
+    console.log(`[Google Calendar] Access token preview: ${jwtClient.credentials.access_token.substring(0, 30)}...`);
+    
+    // Check if token is expired
+    if (jwtClient.credentials.expiry_date) {
+      const expiryDate = new Date(jwtClient.credentials.expiry_date);
+      const now = new Date();
+      if (expiryDate <= now) {
+        console.warn('[Google Calendar] WARNING: Access token has expired! Re-authorizing...');
+        await jwtClient.authorize();
+        console.log('[Google Calendar] Re-authorization after expiry successful');
+      }
+    }
+  } else {
+    console.error('[Google Calendar] ERROR: No access token available!');
+    throw new Error('Access token missing from credentials');
+  }
+  
+  console.log(`[Google Calendar] Token type: ${jwtClient.credentials.token_type || 'not specified'}`);
   console.log('[Google Calendar] ===== AUTHENTICATION VERIFIED =====');
 
   try {
