@@ -1,14 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { getAllProjects } from '@/lib/projects';
+import { useAuth } from '@/contexts/AuthContext';
+import { getAllowedProjectsForUser } from '@/lib/team-members';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 
 export default function AdminPage() {
   const router = useRouter();
-  const projects = getAllProjects();
+  const { user } = useAuth();
+  const projects = getAllowedProjectsForUser(user?.email ?? null);
 
   const handleProjectClick = (projectId: string) => {
     router.push(`/admin/${projectId}/overview`);

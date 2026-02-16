@@ -1,4 +1,13 @@
-import { ProjectId } from './projects';
+import { ProjectId, getProject } from './projects';
+import type { ProjectConfig } from './projects';
+
+/**
+ * Restrict which projects a user can access. If a user's email is listed here, they only see these projects.
+ * Users not in this map have access to all projects.
+ */
+export const USER_PROJECT_ACCESS: Record<string, ProjectId[]> = {
+  'vishwa@spellingbee.ae': ['prepcenter-oman', 'prepcenter-uae'],
+};
 
 /**
  * Team member email addresses for each project
@@ -42,4 +51,30 @@ export function getTeamMembers(projectId: ProjectId): string[] {
  */
 export function supportsAssignment(projectId: ProjectId): boolean {
   return projectId === 'prepcenter-uae' || projectId === 'prepcenter-oman' || projectId === 'hive-learner';
+}
+
+/**
+ * Get project IDs the user is allowed to access. If not in USER_PROJECT_ACCESS, all projects are allowed.
+ */
+export function getAllowedProjectIds(email: string | null | undefined): ProjectId[] {
+  if (!email) return [];
+  const allowed = USER_PROJECT_ACCESS[email.toLowerCase()];
+  if (allowed) return allowed;
+  return ['hive-learner', 'prepcenter-oman', 'prepcenter-uae'];
+}
+
+/**
+ * Get project configs the user is allowed to access. Use for project list and switcher.
+ */
+export function getAllowedProjectsForUser(email: string | null | undefined): ProjectConfig[] {
+  const ids = getAllowedProjectIds(email);
+  return ids.map((id) => getProject(id)).filter((p): p is ProjectConfig => p != null);
+}
+
+/**
+ * Check if the user has access to the given project.
+ */
+export function canAccessProject(email: string | null | undefined, projectId: ProjectId): boolean {
+  const allowed = getAllowedProjectIds(email);
+  return allowed.includes(projectId);
 }

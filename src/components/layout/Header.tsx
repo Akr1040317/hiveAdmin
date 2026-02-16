@@ -7,7 +7,7 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { getAllProjects } from '@/lib/projects';
+import { getAllowedProjectsForUser } from '@/lib/team-members';
 import { cn } from '@/lib/utils';
 
 export const Header: React.FC = () => {
@@ -15,7 +15,7 @@ export const Header: React.FC = () => {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [showSwitcher, setShowSwitcher] = useState(false);
-  const allProjects = getAllProjects();
+  const allProjects = getAllowedProjectsForUser(user?.email ?? null);
 
   if (!project) {
     return (
