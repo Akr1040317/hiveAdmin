@@ -5,6 +5,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase/config';
 import { signInWithGoogle, signOut as firebaseSignOut } from '@/lib/firebase/auth';
+import { USER_PROJECT_ACCESS } from '@/lib/team-members';
 
 interface AuthContextType {
   user: User | null;
@@ -60,8 +61,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (firestoreError: any) {
         // If Firestore read fails (permissions, network, etc.), fall back to env var only
         console.warn('Firestore allowlist check failed, using env var only:', firestoreError.message);
-        // If env var was already checked and didn't match, return false
-        return false;
+      }
+
+      // Users with project access (e.g. Vishwa - PrepCenter only) are allowed to sign in
+      const normalizedEmail = email.toLowerCase();
+      if (USER_PROJECT_ACCESS[normalizedEmail]) {
+        return true;
       }
 
       // If neither env var nor Firestore has the email, deny access
